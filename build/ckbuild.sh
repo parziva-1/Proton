@@ -79,7 +79,7 @@ MKDTBOIMG="$(pwd)/build/dtb/mkdtboimg.py"
 DTS_DEFAULT="$KDIR/arch/arm64/boot/dts/exynos/exynos2100.dts"
 DTS_BALANCED="$KDIR/arch/arm64/boot/dts/exynos/exynos2100_balanced.dts"
 DTS_BATTERY="$KDIR/arch/arm64/boot/dts/exynos/exynos2100_battery.dts"
-DTS_GAMING="$KDIR/arch/arm64/boot/dts/exynos/exynos2100_oc.dts"
+DTS_OC="$KDIR/arch/arm64/boot/dts/exynos/exynos2100_oc.dts"
 
 # Dependencies
 UB_DEPLIST="lz4 brotli flex bc cpio kmod ccache zip binutils-aarch64-linux-gnu device-tree-compiler"
@@ -97,7 +97,7 @@ fi
 
 ## Customizable vars
 # Kernel version
-K_VER="v5.2-Gaming"
+K_VER="v5.2"
 # Toggles
 USE_CCACHE=1
 DO_TAR="1"
@@ -183,7 +183,7 @@ fi
 # Build type variables
 BUILD_TYPE_DEFAULT=0
 BUILD_TYPE_BALANCED=0
-BUILD_TYPE_GAMING=0
+BUILD_TYPE_OC=0
 BUILD_TYPE_BATTERY=0
 BUILD_TYPE_STR=""
 
@@ -192,16 +192,16 @@ case "$BUILD_VARIANT" in
         BUILD_TYPE_DEFAULT=1
         ;;
     balanced)
-        BUILD_TYPE_STR="Balanced++"
+        BUILD_TYPE_STR="Balanced"
         BUILD_TYPE_BALANCED=1
         ;;
     battery)
         BUILD_TYPE_STR="Battery"
         BUILD_TYPE_BATTERY=1
         ;;
-    gaming)
-        BUILD_TYPE_STR="Gaming"
-        BUILD_TYPE_GAMING=1
+    oc)
+        BUILD_TYPE_STR="Overclock"
+        BUILD_TYPE_OC=1
         ;;
     *)
         echo "Unknown build variant: $BUILD_VARIANT, defaulting to 'default'"
@@ -239,7 +239,7 @@ if [[ "$BUILD_TYPE_BALANCED" == "1" ]]; then
     FK_TYPE="$BUILD_TYPE_STR-$FK_TYPE"
 elif [[ "$BUILD_TYPE_BATTERY" == "1" ]]; then
     FK_TYPE="$BUILD_TYPE_STR-$FK_TYPE"
-elif [[ "$BUILD_TYPE_GAMING" == "1" ]]; then
+elif [[ "$BUILD_TYPE_OC" == "1" ]]; then
     FK_TYPE="$BUILD_TYPE_STR-$FK_TYPE"
 fi
 
@@ -423,7 +423,7 @@ build() {
         scripts/config --file "$KDIR/out/.config" --set-val CONFIG_SOC_EXYNOS2100_CL2_UV 4
     fi
 
-    if [ "$BUILD_TYPE_GAMING" == "1" ]; then
+    if [ "$BUILD_TYPE_OC" == "1" ]; then
         scripts/config --file "$KDIR/out/.config" --set-val CONFIG_SOC_EXYNOS2100_CL0_UV 0
         scripts/config --file "$KDIR/out/.config" --set-val CONFIG_SOC_EXYNOS2100_CL1_UV 0
         scripts/config --file "$KDIR/out/.config" --set-val CONFIG_SOC_EXYNOS2100_CL2_UV 0
@@ -523,8 +523,8 @@ post_build() {
         DTS_SRC="$DTS_BALANCED"
     elif [ "$BUILD_TYPE_BATTERY" = "1" ]; then
         DTS_SRC="$DTS_BATTERY"
-    elif [ "$BUILD_TYPE_GAMING" = "1" ]; then
-        DTS_SRC="$DTS_GAMING"
+    elif [ "$BUILD_TYPE_OC" = "1" ]; then
+        DTS_SRC="$DTS_OC"
     fi
     echo -e "\nINFO: Compiling DTS: $DTS_SRC -> $DTB_OUT\n"
     dtc -I dts -O dtb -o "$DTB_OUT" "$DTS_SRC" >/dev/null 2>&1
