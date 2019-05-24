@@ -648,19 +648,9 @@ void fd_install(unsigned int fd, struct file *file)
 
 EXPORT_SYMBOL(fd_install);
 
-/**
- * pick_file - return file associatd with fd
- * @files: file struct to retrieve file from
- * @fd: file descriptor to retrieve file for
- *
- * If this functions returns an EINVAL error pointer the fd was beyond the
- * current maximum number of file descriptors for that fdtable.
- *
- * Returns: The file associated with @fd, on error returns an error pointer.
- */
 static struct file *pick_file(struct files_struct *files, unsigned fd)
 {
-	struct file *file;
+	struct file *file = NULL;
 	struct fdtable *fdt;
 
 	spin_lock(&files->file_lock);
@@ -691,59 +681,12 @@ int __close_fd(struct files_struct *files, unsigned fd)
 	struct file *file;
 
 	file = pick_file(files, fd);
-	if (IS_ERR(file))
+	if (!file)
 		return -EBADF;
 
 	return filp_close(file, files);
 }
 EXPORT_SYMBOL(__close_fd); /* for ksys_close() */
-
-/**
- * last_fd - return last valid index into fd table
- * @cur_fds: files struct
- *
- * Context: Either rcu read lock or files_lock must be held.
- *
- * Returns: Last valid index into fdtable.
- */
-static inline unsigned last_fd(struct fdtable *fdt)
-{
-	return fdt->max_fds - 1;
-}
-
-static inline void __range_cloexec(struct files_struct *cur_fds,
-				   unsigned int fd, unsigned int max_fd)
-{
-	struct fdtable *fdt;
-
-	/* make sure we're using the correct maximum value */
-	spin_lock(&cur_fds->file_lock);
-	fdt = files_fdtable(cur_fds);
-	max_fd = min(last_fd(fdt), max_fd);
-	if (fd <= max_fd)
-		bitmap_set(fdt->close_on_exec, fd, max_fd - fd + 1);
-	spin_unlock(&cur_fds->file_lock);
-}
-
-static inline void __range_close(struct files_struct *cur_fds, unsigned int fd,
-				 unsigned int max_fd)
-{
-	while (fd <= max_fd) {
-		struct file *file;
-
-		file = pick_file(cur_fds, fd++);
-		if (!IS_ERR(file)) {
-			/* found a valid file to close */
-			filp_close(file, cur_fds);
-			cond_resched();
-			continue;
-		}
-
-		/* beyond the last fd in that table */
-		if (PTR_ERR(file) == -EINVAL)
-			return;
-	}
-}
 
 /**
  * __close_range() - Close all file descriptors in a given range.
@@ -754,52 +697,30 @@ static inline void __range_close(struct files_struct *cur_fds, unsigned int fd,
  * This closes a range of file descriptors. All file descriptors
  * from @fd up to and including @max_fd are closed.
  */
-int __close_range(unsigned fd, unsigned max_fd, unsigned int flags)
+int __close_range(struct files_struct *files, unsigned fd, unsigned max_fd)
 {
-	struct task_struct *me = current;
-	struct files_struct *cur_fds = me->files, *fds = NULL;
-
-	if (flags & ~(CLOSE_RANGE_UNSHARE | CLOSE_RANGE_CLOEXEC))
-		return -EINVAL;
+	unsigned int cur_max;
 
 	if (fd > max_fd)
 		return -EINVAL;
 
-	if ((flags & CLOSE_RANGE_UNSHARE) && atomic_read(&cur_fds->count) > 1) {
-		struct fd_range range = {fd, max_fd}, *punch_hole = &range;
+	rcu_read_lock();
+	cur_max = files_fdtable(files)->max_fds;
+	rcu_read_unlock();
 
-		/*
-		 * If the caller requested all fds to be made cloexec we always
-		 * copy all of the file descriptors since they still want to
-		 * use them.
-		 */
-		if (flags & CLOSE_RANGE_CLOEXEC)
-			punch_hole = NULL;
+	/* cap to last valid index into fdtable */
+	cur_max--;
 
-		fds = dup_fd(cur_fds, punch_hole);
-		if (IS_ERR(fds))
-			return PTR_ERR(fds);
-		/*
-		 * We used to share our file descriptor table, and have now
-		 * created a private one, make sure we're using it below.
-		 */
-		swap(cur_fds, fds);
-	}
+	max_fd = min(max_fd, cur_max);
+	while (fd <= max_fd) {
+		struct file *file;
 
-	if (flags & CLOSE_RANGE_CLOEXEC)
-		__range_cloexec(cur_fds, fd, max_fd);
-	else
-		__range_close(cur_fds, fd, max_fd);
+		file = pick_file(files, fd++);
+		if (!file)
+			continue;
 
-	if (fds) {
-		/*
-		 * We're done closing the files we were supposed to. Time to install
-		 * the new file descriptor table and drop the old one.
-		 */
-		task_lock(me);
-		me->files = cur_fds;
-		task_unlock(me);
-		put_files_struct(fds);
+		filp_close(file, files);
+		cond_resched();
 	}
 
 	return 0;
