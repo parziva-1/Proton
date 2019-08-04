@@ -1217,13 +1217,12 @@ config SCHED_AUTOGROUP
 	  desktop applications.  Task group autogeneration is currently based
 	  upon task session.
 
-config CPUSETS_ASSIST
-	bool "Cpusets configuration helper"
+config CPUSET_ASSIST
+	bool "Cpuset configuration helper"
 	depends on CPUSETS
 	depends on ANDROID
 	help
-	  This option enables the configuration of default cpusets
-	  parameters from kernel.
+	  This option enables in-kernel overrides for cpuset values.
 
 	  If unsure, say N.
 
