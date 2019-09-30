@@ -2609,12 +2609,6 @@ int unregister_netdevice_notifier(struct notifier_block *nb);
 int register_netdevice_notifier_net(struct net *net, struct notifier_block *nb);
 int unregister_netdevice_notifier_net(struct net *net,
 				      struct notifier_block *nb);
-int register_netdevice_notifier_dev_net(struct net_device *dev,
-					struct notifier_block *nb,
-					struct netdev_net_notifier *nn);
-int unregister_netdevice_notifier_dev_net(struct net_device *dev,
-					  struct notifier_block *nb,
-					  struct netdev_net_notifier *nn);
 
 struct netdev_notifier_info {
 	struct net_device	*dev;
