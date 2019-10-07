@@ -99,7 +99,109 @@ int flow_dissector_bpf_prog_attach_check(struct net *net,
 
 	return 0;
 }
-#endif /* CONFIG_BPF_SYSCALL */
+
+int skb_flow_dissector_bpf_prog_attach(const union bpf_attr *attr,
+				       struct bpf_prog *prog)
+{
+	struct bpf_prog *attached;
+	struct net *net;
+	int ret = 0;
+
+	net = current->nsproxy->net_ns;
+	mutex_lock(&flow_dissector_mutex);
+
+	if (net == &init_net) {
+		/* BPF flow dissector in the root namespace overrides
+		 * any per-net-namespace one. When attaching to root,
+		 * make sure we don't have any BPF program attached
+		 * to the non-root namespaces.
+		 */
+		struct net *ns;
+
+		for_each_net(ns) {
+			if (rcu_access_pointer(ns->flow_dissector_prog)) {
+				ret = -EEXIST;
+				goto out;
+			}
+		}
+	} else {
+		/* Make sure root flow dissector is not attached
+		 * when attaching to the non-root namespace.
+		 */
+		if (rcu_access_pointer(init_net.flow_dissector_prog)) {
+			ret = -EEXIST;
+			goto out;
+		}
+	}
+
+	attached = rcu_dereference_protected(net->flow_dissector_prog,
+					     lockdep_is_held(&flow_dissector_mutex));
+	if (attached) {
+		/* Only one BPF program can be attached at a time */
+		ret = -EEXIST;
+		goto out;
+	}
+	rcu_assign_pointer(net->flow_dissector_prog, prog);
+out:
+	mutex_unlock(&flow_dissector_mutex);
+	return ret;
+}
+
+static int flow_dissector_bpf_prog_detach(struct net *net)
+{
+	struct bpf_prog *attached;
+
+	mutex_lock(&flow_dissector_mutex);
+	attached = rcu_dereference_protected(net->flow_dissector_prog,
+					     lockdep_is_held(&flow_dissector_mutex));
+	if (!attached) {
+		mutex_unlock(&flow_dissector_mutex);
+		return -ENOENT;
+	}
+	RCU_INIT_POINTER(net->flow_dissector_prog, NULL);
+	bpf_prog_put(attached);
+	mutex_unlock(&flow_dissector_mutex);
+	return 0;
+}
+/**
+ * skb_flow_get_be16 - extract be16 entity
+ * @skb: sk_buff to extract from
+ * @poff: offset to extract at
+ * @data: raw buffer pointer to the packet
+ * @hlen: packet header length
+ *
+ * The function will try to retrieve a be32 entity at
+ * offset poff
+ */
+static __be16 skb_flow_get_be16(const struct sk_buff *skb, int poff,
+				void *data, int hlen)
+{
+	__be16 *u, _u;
+
+	u = __skb_header_pointer(skb, poff, sizeof(_u), data, hlen, &_u);
+	if (u)
+		return *u;
+
+	return 0;
+}
+
+int skb_flow_dissector_bpf_prog_detach(const union bpf_attr *attr)
+{
+	return flow_dissector_bpf_prog_detach(current->nsproxy->net_ns);
+}
+
+static void __net_exit flow_dissector_pernet_pre_exit(struct net *net)
+{
+	/* We're not racing with attach/detach because there are no
+	 * references to netns left when pre_exit gets called.
+	 */
+	if (rcu_access_pointer(net->flow_dissector_prog))
+		flow_dissector_bpf_prog_detach(net);
+}
+
+static struct pernet_operations flow_dissector_pernet_ops __net_initdata = {
+	.pre_exit = flow_dissector_pernet_pre_exit,
+};
 
 /**
  * __skb_flow_get_ports - extract the upper layer ports and return them
@@ -948,8 +1050,11 @@ bool __skb_flow_dissect(const struct net *net,
 
 	WARN_ON_ONCE(!net);
 	if (net) {
-		enum netns_bpf_attach_type type = NETNS_BPF_FLOW_DISSECTOR;
-		struct bpf_prog_array *run_array;
+		rcu_read_lock();
+		attached = rcu_dereference(init_net.flow_dissector_prog);
+
+		if (!attached)
+			attached = rcu_dereference(net->flow_dissector_prog);
 
 		rcu_read_lock();
 		run_array = rcu_dereference(init_net.bpf.run_array[type]);
