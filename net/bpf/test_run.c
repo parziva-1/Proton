@@ -467,21 +467,15 @@ static int convert___skb_to_skb(struct sk_buff *skb, struct __sk_buff *__skb)
 
 	/* cb is allowed */
 
-	if (!range_is_zero(__skb, offsetofend(struct __sk_buff, cb),
+	if (!range_is_zero(__skb, offsetof(struct __sk_buff, cb) +
+			   FIELD_SIZEOF(struct __sk_buff, cb),
 			   offsetof(struct __sk_buff, tstamp)))
 		return -EINVAL;
 
 	/* tstamp is allowed */
-	/* wire_len is allowed */
-	/* gso_segs is allowed */
 
-	if (!range_is_zero(__skb, offsetofend(struct __sk_buff, gso_segs),
-			   offsetof(struct __sk_buff, gso_size)))
-		return -EINVAL;
-
-	/* gso_size is allowed */
-
-	if (!range_is_zero(__skb, offsetofend(struct __sk_buff, gso_size),
+	if (!range_is_zero(__skb, offsetof(struct __sk_buff, tstamp) +
+			   FIELD_SIZEOF(struct __sk_buff, tstamp),
 			   sizeof(struct __sk_buff)))
 		return -EINVAL;
 
@@ -516,7 +510,6 @@ static void convert_skb_to___skb(struct sk_buff *skb, struct __sk_buff *__skb)
 
 	__skb->mark = skb->mark;
 	__skb->priority = skb->priority;
-	__skb->ifindex = skb->dev->ifindex;
 	__skb->tstamp = skb->tstamp;
 	memcpy(__skb->cb, &cb->data, QDISC_CB_PRIV_LEN);
 	__skb->wire_len = cb->pkt_len;
