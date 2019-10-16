@@ -143,8 +143,6 @@ ftrace_func_t ftrace_ops_get_func(struct ftrace_ops *ops);
  * TRACE_ARRAY - The ops->private points to a trace_array descriptor.
  * PERMANENT - Set when the ops is permanent and should not be affected by
  *             ftrace_enabled.
- * DIRECT - Used by the direct ftrace_ops helper for direct functions
- *            (internal ftrace only, should not be used by others)
  */
 enum {
 	FTRACE_OPS_FL_ENABLED			= 1 << 0,
@@ -164,7 +162,6 @@ enum {
 	FTRACE_OPS_FL_RCU			= 1 << 14,
 	FTRACE_OPS_FL_TRACE_ARRAY		= 1 << 15,
 	FTRACE_OPS_FL_PERMANENT                 = 1 << 16,
-	FTRACE_OPS_FL_DIRECT			= 1 << 17,
 };
 
 #ifdef CONFIG_DYNAMIC_FTRACE
