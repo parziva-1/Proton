@@ -1772,7 +1772,7 @@ static bool raw_tp_prog_is_valid_access(int off, int size,
 		return false;
 	if (off % size != 0)
 		return false;
-	return true;
+	return btf_ctx_access(off, size, type, prog, info);
 }
 
 static bool tracing_prog_is_valid_access(int off, int size,

@@ -518,14 +518,6 @@ static const char * const reg_type_str[] = {
 	[PTR_TO_TP_BUFFER]	= "tp_buffer",
 	[PTR_TO_XDP_SOCK]	= "xdp_sock",
 	[PTR_TO_BTF_ID]		= "ptr_",
-	[PTR_TO_BTF_ID_OR_NULL]	= "ptr_or_null_",
-	[PTR_TO_PERCPU_BTF_ID]	= "percpu_ptr_",
-	[PTR_TO_MEM]		= "mem",
-	[PTR_TO_MEM_OR_NULL]	= "mem_or_null",
-	[PTR_TO_RDONLY_BUF]	= "rdonly_buf",
-	[PTR_TO_RDONLY_BUF_OR_NULL] = "rdonly_buf_or_null",
-	[PTR_TO_RDWR_BUF]	= "rdwr_buf",
-	[PTR_TO_RDWR_BUF_OR_NULL] = "rdwr_buf_or_null",
 };
 
 static char slot_type_char[] = {
@@ -562,20 +554,6 @@ const char *kernel_type_name(u32 id)
 				  btf_type_by_id(btf_vmlinux, id)->name_off);
 }
 
-/* The reg state of a pointer or a bounded scalar was saved when
- * it was spilled to the stack.
- */
-static bool is_spilled_reg(const struct bpf_stack_state *stack)
-{
-	return stack->slot_type[BPF_REG_SIZE - 1] == STACK_SPILL;
-}
-
-static void scrub_spilled_slot(u8 *stype)
-{
-	if (*stype != STACK_INVALID)
-		*stype = STACK_MISC;
-}
-
 static void print_verifier_state(struct bpf_verifier_env *env,
 				 const struct bpf_func_state *state)
 {
@@ -600,9 +578,7 @@ static void print_verifier_state(struct bpf_verifier_env *env,
 			/* reg->off should be 0 for SCALAR_VALUE */
 			verbose(env, "%lld", reg->var_off.value + reg->off);
 		} else {
-			if (t == PTR_TO_BTF_ID ||
-			    t == PTR_TO_BTF_ID_OR_NULL ||
-			    t == PTR_TO_PERCPU_BTF_ID)
+			if (t == PTR_TO_BTF_ID)
 				verbose(env, "%s", kernel_type_name(reg->btf_id));
 			verbose(env, "(id=%d", reg->id);
 			if (reg_type_may_be_refcounted_or_null(t))
@@ -3273,7 +3249,7 @@ static int check_ctx_access(struct bpf_verifier_env *env, int insn_idx, int off,
 		 */
 		*reg_type = info.reg_type;
 
-		if (*reg_type == PTR_TO_BTF_ID || *reg_type == PTR_TO_BTF_ID_OR_NULL)
+		if (*reg_type == PTR_TO_BTF_ID)
 			*btf_id = info.btf_id;
 		else
 			env->insn_aux_data[insn_idx].ctx_field_size = info.ctx_field_size;
@@ -3805,6 +3781,11 @@ static int check_ptr_to_btf_access(struct bpf_verifier_env *env,
 	u32 btf_id;
 	int ret;
 
+	if (atype != BPF_READ) {
+		verbose(env, "only read is supported\n");
+		return -EACCES;
+	}
+
 	if (off < 0) {
 		verbose(env,
 			"R%d is ptr_%s invalid negative access: off=%d\n",
@@ -3821,166 +3802,18 @@ static int check_ptr_to_btf_access(struct bpf_verifier_env *env,
 		return -EACCES;
 	}
 
-	if (env->ops->btf_struct_access) {
-		ret = env->ops->btf_struct_access(&env->log, t, off, size,
-						  atype, &btf_id);
-	} else {
-		if (atype != BPF_READ) {
-			verbose(env, "only read is supported\n");
-			return -EACCES;
-		}
-
-		ret = btf_struct_access(&env->log, t, off, size, atype,
-					&btf_id);
-	}
-
-	if (ret < 0)
-		return ret;
-
-	if (atype == BPF_READ && value_regno >= 0)
-		mark_btf_ld_reg(env, regs, value_regno, ret, btf_id);
-
-	return 0;
-}
-
-static int check_ptr_to_map_access(struct bpf_verifier_env *env,
-				   struct bpf_reg_state *regs,
-				   int regno, int off, int size,
-				   enum bpf_access_type atype,
-				   int value_regno)
-{
-	struct bpf_reg_state *reg = regs + regno;
-	struct bpf_map *map = reg->map_ptr;
-	const struct btf_type *t;
-	const char *tname;
-	u32 btf_id;
-	int ret;
-
-	if (!btf_vmlinux) {
-		verbose(env, "map_ptr access not supported without CONFIG_DEBUG_INFO_BTF\n");
-		return -ENOTSUPP;
-	}
-
-	if (!map->ops->map_btf_id || !*map->ops->map_btf_id) {
-		verbose(env, "map_ptr access not supported for map type %d\n",
-			map->map_type);
-		return -ENOTSUPP;
-	}
-
-	t = btf_type_by_id(btf_vmlinux, *map->ops->map_btf_id);
-	tname = btf_name_by_offset(btf_vmlinux, t->name_off);
-
-	if (!env->allow_ptr_to_map_access) {
-		verbose(env,
-			"%s access is allowed only to CAP_PERFMON and CAP_SYS_ADMIN\n",
-			tname);
-		return -EPERM;
-	}
-
-	if (off < 0) {
-		verbose(env, "R%d is %s invalid negative access: off=%d\n",
-			regno, tname, off);
-		return -EACCES;
-	}
-
-	if (atype != BPF_READ) {
-		verbose(env, "only read from %s is supported\n", tname);
-		return -EACCES;
-	}
-
 	ret = btf_struct_access(&env->log, t, off, size, atype, &btf_id);
 	if (ret < 0)
 		return ret;
 
-	if (value_regno >= 0)
-		mark_btf_ld_reg(env, regs, value_regno, ret, btf_id);
-
-	return 0;
-}
-
-/* Check that the stack access at the given offset is within bounds. The
- * maximum valid offset is -1.
- *
- * The minimum valid offset is -MAX_BPF_STACK for writes, and
- * -state->allocated_stack for reads.
- */
-static int check_stack_slot_within_bounds(int off,
-					  struct bpf_func_state *state,
-					  enum bpf_access_type t)
-{
-	int min_valid_off;
-
-	if (t == BPF_WRITE)
-		min_valid_off = -MAX_BPF_STACK;
-	else
-		min_valid_off = -state->allocated_stack;
-
-	if (off < min_valid_off || off > -1)
-		return -EACCES;
-	return 0;
-}
-
-/* Check that the stack access at 'regno + off' falls within the maximum stack
- * bounds.
- *
- * 'off' includes `regno->offset`, but not its dynamic part (if any).
- */
-static int check_stack_access_within_bounds(
-		struct bpf_verifier_env *env,
-		int regno, int off, int access_size,
-		enum stack_access_src src, enum bpf_access_type type)
-{
-	struct bpf_reg_state *regs = cur_regs(env);
-	struct bpf_reg_state *reg = regs + regno;
-	struct bpf_func_state *state = func(env, reg);
-	int min_off, max_off;
-	int err;
-	char *err_extra;
-
-	if (src == ACCESS_HELPER)
-		/* We don't know if helpers are reading or writing (or both). */
-		err_extra = " indirect access to";
-	else if (type == BPF_READ)
-		err_extra = " read from";
-	else
-		err_extra = " write to";
-
-	if (tnum_is_const(reg->var_off)) {
-		min_off = reg->var_off.value + off;
-		max_off = min_off + access_size;
-	} else {
-		if (reg->smax_value >= BPF_MAX_VAR_OFF ||
-		    reg->smin_value <= -BPF_MAX_VAR_OFF) {
-			verbose(env, "invalid unbounded variable-offset%s stack R%d\n",
-				err_extra, regno);
-			return -EACCES;
-		}
-		min_off = reg->smin_value + off;
-		max_off = reg->smax_value + off + access_size;
+	if (ret == SCALAR_VALUE) {
+		mark_reg_unknown(env, regs, value_regno);
+		return 0;
 	}
-
-	err = check_stack_slot_within_bounds(min_off, state, type);
-	if (!err && max_off > 0)
-		err = -EINVAL; /* out of stack access into non-negative offsets */
-	if (!err && access_size < 0)
-		/* access_size should not be negative (or overflow an int); others checks
-		 * along the way should have prevented such an access.
-		 */
-		err = -EFAULT; /* invalid negative access size; integer overflow? */
-
-	if (err) {
-		if (tnum_is_const(reg->var_off)) {
-			verbose(env, "invalid%s stack R%d off=%d size=%d\n",
-				err_extra, regno, off, access_size);
-		} else {
-			char tn_buf[48];
-
-			tnum_strn(tn_buf, sizeof(tn_buf), reg->var_off);
-			verbose(env, "invalid variable-offset%s stack R%d var_off=%s size=%d\n",
-				err_extra, regno, tn_buf, access_size);
-		}
-	}
-	return err;
+	mark_reg_known_zero(env, regs, value_regno);
+	regs[value_regno].type = PTR_TO_BTF_ID;
+	regs[value_regno].btf_id = btf_id;
+	return 0;
 }
 
 /* check whether memory at (regno + off) is accessible for t = (read | write)
@@ -4086,8 +3919,7 @@ static int check_mem_access(struct bpf_verifier_env *env, int insn_idx, u32 regn
 				 * a sub-register.
 				 */
 				regs[value_regno].subreg_def = DEF_NOT_SUBREG;
-				if (reg_type == PTR_TO_BTF_ID ||
-				    reg_type == PTR_TO_BTF_ID_OR_NULL)
+				if (reg_type == PTR_TO_BTF_ID)
 					regs[value_regno].btf_id = btf_id;
 			}
 			regs[value_regno].type = reg_type;
@@ -4151,26 +3983,6 @@ static int check_mem_access(struct bpf_verifier_env *env, int insn_idx, u32 regn
 	} else if (reg->type == PTR_TO_BTF_ID) {
 		err = check_ptr_to_btf_access(env, regs, regno, off, size, t,
 					      value_regno);
-	} else if (reg->type == CONST_PTR_TO_MAP) {
-		err = check_ptr_to_map_access(env, regs, regno, off, size, t,
-					      value_regno);
-	} else if (reg->type == PTR_TO_RDONLY_BUF) {
-		if (t == BPF_WRITE) {
-			verbose(env, "R%d cannot write into %s\n",
-				regno, reg_type_str[reg->type]);
-			return -EACCES;
-		}
-		err = check_buffer_access(env, reg, regno, off, size, false,
-					  "rdonly",
-					  &env->prog->aux->max_rdonly_access);
-		if (!err && value_regno >= 0)
-			mark_reg_unknown(env, regs, value_regno);
-	} else if (reg->type == PTR_TO_RDWR_BUF) {
-		err = check_buffer_access(env, reg, regno, off, size, false,
-					  "rdwr",
-					  &env->prog->aux->max_rdwr_access);
-		if (!err && t == BPF_READ && value_regno >= 0)
-			mark_reg_unknown(env, regs, value_regno);
 	} else {
 		verbose(env, "R%d invalid mem access '%s'\n", regno,
 			reg_type_str[reg->type]);
