@@ -2809,7 +2809,7 @@ static int bpf_raw_tracepoint_open(const union bpf_attr *attr)
 	struct bpf_prog *prog;
 	const char *tp_name;
 	char buf[128];
-	int err;
+	int tp_fd, err;
 
 	if (CHECK_ATTR(BPF_RAW_TRACEPOINT_OPEN))
 		return -EINVAL;
@@ -2818,28 +2818,26 @@ static int bpf_raw_tracepoint_open(const union bpf_attr *attr)
 	if (IS_ERR(prog))
 		return PTR_ERR(prog);
 
-	switch (prog->type) {
-	case BPF_PROG_TYPE_TRACING:
-	case BPF_PROG_TYPE_EXT:
-	case BPF_PROG_TYPE_LSM:
+	if (prog->type != BPF_PROG_TYPE_RAW_TRACEPOINT &&
+	    prog->type != BPF_PROG_TYPE_RAW_TRACEPOINT_WRITABLE) {
+		err = -EINVAL;
+		goto out_put_prog;
+	}
+
+	if (prog->type == BPF_PROG_TYPE_RAW_TRACEPOINT &&
+	    prog->aux->attach_btf_id) {
 		if (attr->raw_tracepoint.name) {
-			/* The attach point for this category of programs
-			 * should be specified via btf_id during program load.
+			/* raw_tp name should not be specified in raw_tp
+			 * programs that were verified via in-kernel BTF info
 			 */
 			err = -EINVAL;
 			goto out_put_prog;
 		}
-		if (prog->type == BPF_PROG_TYPE_TRACING &&
-		    prog->expected_attach_type == BPF_TRACE_RAW_TP) {
-			tp_name = prog->aux->attach_func_name;
-			break;
-		}
-		err = bpf_tracing_prog_attach(prog, 0, 0);
-		if (err >= 0)
-			return err;
-		goto out_put_prog;
-	case BPF_PROG_TYPE_RAW_TRACEPOINT:
-	case BPF_PROG_TYPE_RAW_TRACEPOINT_WRITABLE:
+		/* raw_tp name is taken from type name instead */
+		tp_name = kernel_type_name(prog->aux->attach_btf_id);
+		/* skip the prefix */
+		tp_name += sizeof("btf_trace_") - 1;
+	} else {
 		if (strncpy_from_user(buf,
 				      u64_to_user_ptr(attr->raw_tracepoint.name),
 				      sizeof(buf) - 1) < 0) {
@@ -2848,10 +2846,6 @@ static int bpf_raw_tracepoint_open(const union bpf_attr *attr)
 		}
 		buf[sizeof(buf) - 1] = 0;
 		tp_name = buf;
-		break;
-	default:
-		err = -EINVAL;
-		goto out_put_prog;
 	}
 
 	btp = bpf_get_raw_tracepoint(tp_name);
@@ -2860,29 +2854,28 @@ static int bpf_raw_tracepoint_open(const union bpf_attr *attr)
 		goto out_put_prog;
 	}
 
-	link = kzalloc(sizeof(*link), GFP_USER);
-	if (!link) {
+	raw_tp = kzalloc(sizeof(*raw_tp), GFP_USER);
+	if (!raw_tp) {
 		err = -ENOMEM;
 		goto out_put_btp;
 	}
-	bpf_link_init(&link->link, BPF_LINK_TYPE_RAW_TRACEPOINT,
-		      &bpf_raw_tp_link_lops, prog);
-	link->btp = btp;
+	raw_tp->btp = btp;
+	raw_tp->prog = prog;
 
-	err = bpf_link_prime(&link->link, &link_primer);
-	if (err) {
-		kfree(link);
-		goto out_put_btp;
+	err = bpf_probe_register(raw_tp->btp, prog);
+	if (err)
+		goto out_free_tp;
+
+	tp_fd = anon_inode_getfd("bpf-raw-tracepoint", &bpf_raw_tp_fops, raw_tp,
+				 O_CLOEXEC);
+	if (tp_fd < 0) {
+		bpf_probe_unregister(raw_tp->btp, prog);
+		err = tp_fd;
+		goto out_free_tp;
 	}
 
-	err = bpf_probe_register(link->btp, prog);
-	if (err) {
-		bpf_link_cleanup(&link_primer);
-		goto out_put_btp;
-	}
-
-	return bpf_link_settle(&link_primer);
-
+out_free_tp:
+	kfree(raw_tp);
 out_put_btp:
 	bpf_put_raw_tracepoint(btp);
 out_put_prog:
