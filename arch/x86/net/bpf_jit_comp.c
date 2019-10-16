@@ -9,8 +9,6 @@
 #include <linux/filter.h>
 #include <linux/if_vlan.h>
 #include <linux/bpf.h>
-#include <linux/memory.h>
-#include <linux/sort.h>
 #include <asm/extable.h>
 #include <asm/set_memory.h>
 #include <asm/nospec-branch.h>
@@ -127,6 +125,19 @@ static const int reg2hex[] = {
 	[BPF_REG_AX] = 2, /* R10 temp register */
 	[AUX_REG] = 3,    /* R11 temp register */
 	[X86_REG_R9] = 1, /* R9 register, 6th function argument */
+};
+
+static const int reg2pt_regs[] = {
+	[BPF_REG_0] = offsetof(struct pt_regs, ax),
+	[BPF_REG_1] = offsetof(struct pt_regs, di),
+	[BPF_REG_2] = offsetof(struct pt_regs, si),
+	[BPF_REG_3] = offsetof(struct pt_regs, dx),
+	[BPF_REG_4] = offsetof(struct pt_regs, cx),
+	[BPF_REG_5] = offsetof(struct pt_regs, r8),
+	[BPF_REG_6] = offsetof(struct pt_regs, bx),
+	[BPF_REG_7] = offsetof(struct pt_regs, r13),
+	[BPF_REG_8] = offsetof(struct pt_regs, r14),
+	[BPF_REG_9] = offsetof(struct pt_regs, r15),
 };
 
 static const int reg2pt_regs[] = {
@@ -671,83 +682,6 @@ static void emit_mov_reg(u8 **pprog, bool is64, u32 dst_reg, u32 src_reg)
 	*pprog = prog;
 }
 
-/* LDX: dst_reg = *(u8*)(src_reg + off) */
-static void emit_ldx(u8 **pprog, u32 size, u32 dst_reg, u32 src_reg, int off)
-{
-	u8 *prog = *pprog;
-	int cnt = 0;
-
-	switch (size) {
-	case BPF_B:
-		/* Emit 'movzx rax, byte ptr [rax + off]' */
-		EMIT3(add_2mod(0x48, src_reg, dst_reg), 0x0F, 0xB6);
-		break;
-	case BPF_H:
-		/* Emit 'movzx rax, word ptr [rax + off]' */
-		EMIT3(add_2mod(0x48, src_reg, dst_reg), 0x0F, 0xB7);
-		break;
-	case BPF_W:
-		/* Emit 'mov eax, dword ptr [rax+0x14]' */
-		if (is_ereg(dst_reg) || is_ereg(src_reg))
-			EMIT2(add_2mod(0x40, src_reg, dst_reg), 0x8B);
-		else
-			EMIT1(0x8B);
-		break;
-	case BPF_DW:
-		/* Emit 'mov rax, qword ptr [rax+0x14]' */
-		EMIT2(add_2mod(0x48, src_reg, dst_reg), 0x8B);
-		break;
-	}
-	/*
-	 * If insn->off == 0 we can save one extra byte, but
-	 * special case of x86 R13 which always needs an offset
-	 * is not worth the hassle
-	 */
-	if (is_imm8(off))
-		EMIT2(add_2reg(0x40, src_reg, dst_reg), off);
-	else
-		EMIT1_off32(add_2reg(0x80, src_reg, dst_reg), off);
-	*pprog = prog;
-}
-
-/* STX: *(u8*)(dst_reg + off) = src_reg */
-static void emit_stx(u8 **pprog, u32 size, u32 dst_reg, u32 src_reg, int off)
-{
-	u8 *prog = *pprog;
-	int cnt = 0;
-
-	switch (size) {
-	case BPF_B:
-		/* Emit 'mov byte ptr [rax + off], al' */
-		if (is_ereg(dst_reg) || is_ereg(src_reg) ||
-		    /* We have to add extra byte for x86 SIL, DIL regs */
-		    src_reg == BPF_REG_1 || src_reg == BPF_REG_2)
-			EMIT2(add_2mod(0x40, dst_reg, src_reg), 0x88);
-		else
-			EMIT1(0x88);
-		break;
-	case BPF_H:
-		if (is_ereg(dst_reg) || is_ereg(src_reg))
-			EMIT3(0x66, add_2mod(0x40, dst_reg, src_reg), 0x89);
-		else
-			EMIT2(0x66, 0x89);
-		break;
-	case BPF_W:
-		if (is_ereg(dst_reg) || is_ereg(src_reg))
-			EMIT2(add_2mod(0x40, dst_reg, src_reg), 0x89);
-		else
-			EMIT1(0x89);
-		break;
-	case BPF_DW:
-		EMIT2(add_2mod(0x48, dst_reg, src_reg), 0x89);
-		break;
-	}
-	if (is_imm8(off))
-		EMIT2(add_2reg(0x40, dst_reg, src_reg), off);
-	else
-		EMIT1_off32(add_2reg(0x80, dst_reg, src_reg), off);
-	*pprog = prog;
-}
 
 static bool ex_handler_bpf(const struct exception_table_entry *x,
 			   struct pt_regs *regs, int trapnr,
@@ -759,25 +693,6 @@ static bool ex_handler_bpf(const struct exception_table_entry *x,
 	*(unsigned long *)((void *)regs + reg) = 0;
 	regs->ip += x->fixup & 0xff;
 	return true;
-}
-
-static void detect_reg_usage(struct bpf_insn *insn, int insn_cnt,
-			     bool *regs_used, bool *tail_call_seen)
-{
-	int i;
-
-	for (i = 1; i <= insn_cnt; i++, insn++) {
-		if (insn->code == (BPF_JMP | BPF_TAIL_CALL))
-			*tail_call_seen = true;
-		if (insn->dst_reg == BPF_REG_6 || insn->src_reg == BPF_REG_6)
-			regs_used[0] = true;
-		if (insn->dst_reg == BPF_REG_7 || insn->src_reg == BPF_REG_7)
-			regs_used[1] = true;
-		if (insn->dst_reg == BPF_REG_8 || insn->src_reg == BPF_REG_8)
-			regs_used[2] = true;
-		if (insn->dst_reg == BPF_REG_9 || insn->src_reg == BPF_REG_9)
-			regs_used[3] = true;
-	}
 }
 
 static int do_jit(struct bpf_prog *bpf_prog, int *addrs, u8 *image,
@@ -1177,13 +1092,36 @@ st:			if (is_imm8(insn->off))
 			/* LDX: dst_reg = *(u8*)(src_reg + off) */
 		case BPF_LDX | BPF_MEM | BPF_B:
 		case BPF_LDX | BPF_PROBE_MEM | BPF_B:
+			/* Emit 'movzx rax, byte ptr [rax + off]' */
+			EMIT3(add_2mod(0x48, src_reg, dst_reg), 0x0F, 0xB6);
+			goto ldx;
 		case BPF_LDX | BPF_MEM | BPF_H:
 		case BPF_LDX | BPF_PROBE_MEM | BPF_H:
+			/* Emit 'movzx rax, word ptr [rax + off]' */
+			EMIT3(add_2mod(0x48, src_reg, dst_reg), 0x0F, 0xB7);
+			goto ldx;
 		case BPF_LDX | BPF_MEM | BPF_W:
 		case BPF_LDX | BPF_PROBE_MEM | BPF_W:
+			/* Emit 'mov eax, dword ptr [rax+0x14]' */
+			if (is_ereg(dst_reg) || is_ereg(src_reg))
+				EMIT2(add_2mod(0x40, src_reg, dst_reg), 0x8B);
+			else
+				EMIT1(0x8B);
+			goto ldx;
 		case BPF_LDX | BPF_MEM | BPF_DW:
 		case BPF_LDX | BPF_PROBE_MEM | BPF_DW:
-			emit_ldx(&prog, BPF_SIZE(insn->code), dst_reg, src_reg, insn->off);
+			/* Emit 'mov rax, qword ptr [rax+0x14]' */
+			EMIT2(add_2mod(0x48, src_reg, dst_reg), 0x8B);
+ldx:			/*
+			 * If insn->off == 0 we can save one extra byte, but
+			 * special case of x86 R13 which always needs an offset
+			 * is not worth the hassle
+			 */
+			if (is_imm8(insn->off))
+				EMIT2(add_2reg(0x40, src_reg, dst_reg), insn->off);
+			else
+				EMIT1_off32(add_2reg(0x80, src_reg, dst_reg),
+					    insn->off);
 			if (BPF_MODE(insn->code) == BPF_PROBE_MEM) {
 				struct exception_table_entry *ex;
 				u8 *_insn = image + proglen;

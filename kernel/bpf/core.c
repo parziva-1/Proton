@@ -31,7 +31,6 @@
 #include <linux/rcupdate.h>
 #include <linux/perf_event.h>
 #include <linux/extable.h>
-#include <linux/log2.h>
 #include <linux/nospec.h>
 
 #include <asm/barrier.h>
@@ -730,22 +729,13 @@ bool is_bpf_text_address(unsigned long addr)
 	return ret;
 }
 
-static struct bpf_prog *bpf_prog_ksym_find(unsigned long addr)
-{
-	struct bpf_ksym *ksym = bpf_ksym_find(addr);
-
-	return ksym && ksym->prog ?
-	       container_of(ksym, struct bpf_prog_aux, ksym)->prog :
-	       NULL;
-}
-
 const struct exception_table_entry *search_bpf_extables(unsigned long addr)
 {
 	const struct exception_table_entry *e = NULL;
 	struct bpf_prog *prog;
 
 	rcu_read_lock();
-	prog = bpf_prog_ksym_find(addr);
+	prog = bpf_prog_kallsyms_find(addr);
 	if (!prog)
 		goto out;
 	if (!prog->aux->num_exentries)

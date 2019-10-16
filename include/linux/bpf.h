@@ -34,10 +34,6 @@ struct seq_file;
 struct btf;
 struct btf_type;
 struct exception_table_entry;
-struct seq_operations;
-struct bpf_iter_aux_info;
-struct bpf_local_storage;
-struct bpf_local_storage_map;
 
 extern struct idr btf_idr;
 extern spinlock_t btf_idr_lock;
