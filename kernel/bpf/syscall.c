@@ -24,12 +24,7 @@
 #include <linux/timekeeping.h>
 #include <linux/ctype.h>
 #include <linux/nospec.h>
-#include <linux/audit.h>
 #include <uapi/linux/btf.h>
-#include <linux/bpf_lsm.h>
-#include <linux/poll.h>
-#include <linux/bpf-netns.h>
-#include <linux/rcupdate_trace.h>
 
 #define IS_FD_ARRAY(map) ((map)->map_type == BPF_MAP_TYPE_PERF_EVENT_ARRAY || \
 			  (map)->map_type == BPF_MAP_TYPE_CGROUP_ARRAY || \
@@ -1983,7 +1978,7 @@ static void bpf_prog_load_fixup_attach_type(union bpf_attr *attr)
 static int
 bpf_prog_load_check_attach(enum bpf_prog_type prog_type,
 			   enum bpf_attach_type expected_attach_type,
-			   u32 btf_id, u32 prog_fd)
+			   u32 btf_id)
 {
 	if (btf_id) {
 		if (btf_id > BTF_MAX_TYPE)
@@ -2049,15 +2044,13 @@ bpf_prog_load_check_attach(enum bpf_prog_type prog_type,
 		default:
 			return -EINVAL;
 		}
-	case BPF_PROG_TYPE_SK_LOOKUP:
-		if (expected_attach_type == BPF_SK_LOOKUP)
-			return 0;
-		return -EINVAL;
-	case BPF_PROG_TYPE_EXT:
-		if (expected_attach_type)
+	case BPF_PROG_TYPE_RAW_TRACEPOINT:
+		if (btf_id > BTF_MAX_TYPE)
 			return -EINVAL;
-		fallthrough;
+		return 0;
 	default:
+		if (btf_id)
+			return -EINVAL;
 		return 0;
 	}
 }
@@ -2112,7 +2105,7 @@ static bool is_perfmon_prog_type(enum bpf_prog_type prog_type)
 }
 
 /* last field in 'union bpf_attr' used by this command */
-#define	BPF_PROG_LOAD_LAST_FIELD attach_prog_fd
+#define	BPF_PROG_LOAD_LAST_FIELD attach_btf_id
 
 static int bpf_prog_load(union bpf_attr *attr, union bpf_attr __user *uattr)
 {
@@ -2161,8 +2154,7 @@ static int bpf_prog_load(union bpf_attr *attr, union bpf_attr __user *uattr)
 
 	bpf_prog_load_fixup_attach_type(attr);
 	if (bpf_prog_load_check_attach(type, attr->expected_attach_type,
-				       attr->attach_btf_id,
-				       attr->attach_prog_fd))
+				       attr->attach_btf_id))
 		return -EINVAL;
 
 	/* plain bpf_prog allocation */
@@ -2172,16 +2164,6 @@ static int bpf_prog_load(union bpf_attr *attr, union bpf_attr __user *uattr)
 
 	prog->expected_attach_type = attr->expected_attach_type;
 	prog->aux->attach_btf_id = attr->attach_btf_id;
-	if (attr->attach_prog_fd) {
-		struct bpf_prog *dst_prog;
-
-		dst_prog = bpf_prog_get(attr->attach_prog_fd);
-		if (IS_ERR(dst_prog)) {
-			err = PTR_ERR(dst_prog);
-			goto free_prog_nouncharge;
-		}
-		prog->aux->dst_prog = dst_prog;
-	}
 
 	prog->aux->offload_requested = !!attr->prog_ifindex;
 	prog->aux->sleepable = attr->prog_flags & BPF_F_SLEEPABLE;

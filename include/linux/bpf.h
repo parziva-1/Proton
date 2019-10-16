@@ -526,15 +526,6 @@ struct bpf_prog_aux {
 	u32 func_cnt; /* used by non-func prog as the number of func progs */
 	u32 func_idx; /* 0 for non-func prog, the index in func array for func prog */
 	u32 attach_btf_id; /* in-kernel BTF type id to attach to */
-	u32 ctx_arg_info_size;
-	u32 max_rdonly_access;
-	u32 max_rdwr_access;
-	const struct bpf_ctx_arg_aux *ctx_arg_info;
-	struct mutex dst_mutex; /* protects dst_* pointers below, *after* prog becomes visible */
-	struct bpf_prog *dst_prog;
-	struct bpf_trampoline *dst_trampoline;
-	enum bpf_prog_type saved_dst_prog_type;
-	enum bpf_attach_type saved_dst_attach_type;
 	bool verifier_zext; /* Zero extensions has been inserted by verifier. */
 	bool offload_requested;
 	bool attach_btf_trace; /* true if attaching to BTF-enabled raw tp */
