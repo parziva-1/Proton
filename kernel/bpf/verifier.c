@@ -12603,6 +12603,13 @@ int bpf_check(struct bpf_prog **prog, union bpf_attr *attr,
 
 	bpf_get_btf_vmlinux();
 
+	if (!btf_vmlinux && IS_ENABLED(CONFIG_DEBUG_INFO_BTF)) {
+		mutex_lock(&bpf_verifier_lock);
+		if (!btf_vmlinux)
+			btf_vmlinux = btf_parse_vmlinux();
+		mutex_unlock(&bpf_verifier_lock);
+	}
+
 	/* grab the mutex to protect few globals used by verifier */
 	if (!is_priv)
 		mutex_lock(&bpf_verifier_lock);
@@ -12627,6 +12634,13 @@ int bpf_check(struct bpf_prog **prog, union bpf_attr *attr,
 		verbose(env, "in-kernel BTF is malformed\n");
 		ret = PTR_ERR(btf_vmlinux);
 		goto skip_full_check;
+	}
+
+	if (IS_ERR(btf_vmlinux)) {
+		/* Either gcc or pahole or kernel are broken. */
+		verbose(env, "in-kernel BTF is malformed\n");
+		ret = PTR_ERR(btf_vmlinux);
+		goto err_unlock;
 	}
 
 	env->strict_alignment = !!(attr->prog_flags & BPF_F_STRICT_ALIGNMENT);
