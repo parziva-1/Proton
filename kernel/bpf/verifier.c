@@ -11991,417 +11991,50 @@ static void print_verification_stats(struct bpf_verifier_env *env)
 		env->peak_states, env->longest_mark_read_walk);
 }
 
-static int check_struct_ops_btf_id(struct bpf_verifier_env *env)
+static int check_attach_btf_id(struct bpf_verifier_env *env)
 {
-	const struct btf_type *t, *func_proto;
-	const struct bpf_struct_ops *st_ops;
-	const struct btf_member *member;
 	struct bpf_prog *prog = env->prog;
-	u32 btf_id, member_idx;
-	const char *mname;
-
-	if (!prog->gpl_compatible) {
-		verbose(env, "struct ops programs must have a GPL compatible license\n");
-		return -EINVAL;
-	}
-
-	btf_id = prog->aux->attach_btf_id;
-	st_ops = bpf_struct_ops_find(btf_id);
-	if (!st_ops) {
-		verbose(env, "attach_btf_id %u is not a supported struct\n",
-			btf_id);
-		return -ENOTSUPP;
-	}
-
-	t = st_ops->type;
-	member_idx = prog->expected_attach_type;
-	if (member_idx >= btf_type_vlen(t)) {
-		verbose(env, "attach to invalid member idx %u of struct %s\n",
-			member_idx, st_ops->name);
-		return -EINVAL;
-	}
-
-	member = &btf_type_member(t)[member_idx];
-	mname = btf_name_by_offset(btf_vmlinux, member->name_off);
-	func_proto = btf_type_resolve_func_ptr(btf_vmlinux, member->type,
-					       NULL);
-	if (!func_proto) {
-		verbose(env, "attach to invalid member %s(@idx %u) of struct %s\n",
-			mname, member_idx, st_ops->name);
-		return -EINVAL;
-	}
-
-	if (st_ops->check_member) {
-		int err = st_ops->check_member(t, member);
-
-		if (err) {
-			verbose(env, "attach to unsupported member %s of struct %s\n",
-				mname, st_ops->name);
-			return err;
-		}
-	}
-
-	prog->aux->attach_func_proto = func_proto;
-	prog->aux->attach_func_name = mname;
-	env->ops = st_ops->verifier_ops;
-
-	return 0;
-}
-#define SECURITY_PREFIX "security_"
-
-static int check_attach_modify_return(unsigned long addr, const char *func_name)
-{
-	if (within_error_injection_list(addr) ||
-	    !strncmp(SECURITY_PREFIX, func_name, sizeof(SECURITY_PREFIX) - 1))
-		return 0;
-
-	return -EINVAL;
-}
-
-/* non exhaustive list of sleepable bpf_lsm_*() functions */
-BTF_SET_START(btf_sleepable_lsm_hooks)
-#ifdef CONFIG_BPF_LSM
-BTF_ID(func, bpf_lsm_bprm_committed_creds)
-#else
-BTF_ID_UNUSED
-#endif
-BTF_SET_END(btf_sleepable_lsm_hooks)
-
-static int check_sleepable_lsm_hook(u32 btf_id)
-{
-	return btf_id_set_contains(&btf_sleepable_lsm_hooks, btf_id);
-}
-
-/* list of non-sleepable functions that are otherwise on
- * ALLOW_ERROR_INJECTION list
- */
-BTF_SET_START(btf_non_sleepable_error_inject)
-/* Three functions below can be called from sleepable and non-sleepable context.
- * Assume non-sleepable from bpf safety point of view.
- */
-BTF_ID(func, __add_to_page_cache_locked)
-BTF_ID(func, should_fail_alloc_page)
-BTF_ID(func, should_failslab)
-BTF_SET_END(btf_non_sleepable_error_inject)
-
-static int check_non_sleepable_error_inject(u32 btf_id)
-{
-	return btf_id_set_contains(&btf_non_sleepable_error_inject, btf_id);
-}
-
-int bpf_check_attach_target(struct bpf_verifier_log *log,
-			    const struct bpf_prog *prog,
-			    const struct bpf_prog *tgt_prog,
-			    u32 btf_id,
-			    struct bpf_attach_target_info *tgt_info)
-{
-	bool prog_extension = prog->type == BPF_PROG_TYPE_EXT;
-	const char prefix[] = "btf_trace_";
-	int ret = 0, subprog = -1, i;
+	u32 btf_id = prog->aux->attach_btf_id;
 	const struct btf_type *t;
-	bool conservative = true;
 	const char *tname;
-	struct btf *btf;
-	long addr = 0;
 
-	if (!btf_id) {
-		bpf_log(log, "Tracing programs must provide btf_id\n");
-		return -EINVAL;
-	}
-	btf = tgt_prog ? tgt_prog->aux->btf : btf_vmlinux;
-	if (!btf) {
-		bpf_log(log,
-			"FENTRY/FEXIT program can only be attached to another program annotated with BTF\n");
-		return -EINVAL;
-	}
-	t = btf_type_by_id(btf, btf_id);
-	if (!t) {
-		bpf_log(log, "attach_btf_id %u is invalid\n", btf_id);
-		return -EINVAL;
-	}
-	tname = btf_name_by_offset(btf, t->name_off);
-	if (!tname) {
-		bpf_log(log, "attach_btf_id %u doesn't have a name\n", btf_id);
-		return -EINVAL;
-	}
-	if (tgt_prog) {
-		struct bpf_prog_aux *aux = tgt_prog->aux;
+	if (prog->type == BPF_PROG_TYPE_RAW_TRACEPOINT && btf_id) {
+		const char prefix[] = "btf_trace_";
 
-		for (i = 0; i < aux->func_info_cnt; i++)
-			if (aux->func_info[i].type_id == btf_id) {
-				subprog = i;
-				break;
-			}
-		if (subprog == -1) {
-			bpf_log(log, "Subprog %s doesn't exist\n", tname);
-			return -EINVAL;
-		}
-		conservative = aux->func_info_aux[subprog].unreliable;
-		if (prog_extension) {
-			if (conservative) {
-				bpf_log(log,
-					"Cannot replace static functions\n");
-				return -EINVAL;
-			}
-			if (!prog->jit_requested) {
-				bpf_log(log,
-					"Extension programs should be JITed\n");
-				return -EINVAL;
-			}
-		}
-		if (!tgt_prog->jited) {
-			bpf_log(log, "Can attach to only JITed progs\n");
-			return -EINVAL;
-		}
-		if (tgt_prog->type == prog->type) {
-			/* Cannot fentry/fexit another fentry/fexit program.
-			 * Cannot attach program extension to another extension.
-			 * It's ok to attach fentry/fexit to extension program.
-			 */
-			bpf_log(log, "Cannot recursively attach\n");
-			return -EINVAL;
-		}
-		if (tgt_prog->type == BPF_PROG_TYPE_TRACING &&
-		    prog_extension &&
-		    (tgt_prog->expected_attach_type == BPF_TRACE_FENTRY ||
-		     tgt_prog->expected_attach_type == BPF_TRACE_FEXIT)) {
-			/* Program extensions can extend all program types
-			 * except fentry/fexit. The reason is the following.
-			 * The fentry/fexit programs are used for performance
-			 * analysis, stats and can be attached to any program
-			 * type except themselves. When extension program is
-			 * replacing XDP function it is necessary to allow
-			 * performance analysis of all functions. Both original
-			 * XDP program and its program extension. Hence
-			 * attaching fentry/fexit to BPF_PROG_TYPE_EXT is
-			 * allowed. If extending of fentry/fexit was allowed it
-			 * would be possible to create long call chain
-			 * fentry->extension->fentry->extension beyond
-			 * reasonable stack size. Hence extending fentry is not
-			 * allowed.
-			 */
-			bpf_log(log, "Cannot extend fentry/fexit\n");
-			return -EINVAL;
-		}
-	} else {
-		if (prog_extension) {
-			bpf_log(log, "Cannot replace kernel functions\n");
-			return -EINVAL;
-		}
-	}
-
-	switch (prog->expected_attach_type) {
-	case BPF_TRACE_RAW_TP:
-		if (tgt_prog) {
-			bpf_log(log,
-				"Only FENTRY/FEXIT progs are attachable to another BPF prog\n");
+		t = btf_type_by_id(btf_vmlinux, btf_id);
+		if (!t) {
+			verbose(env, "attach_btf_id %u is invalid\n", btf_id);
 			return -EINVAL;
 		}
 		if (!btf_type_is_typedef(t)) {
-			bpf_log(log, "attach_btf_id %u is not a typedef\n",
+			verbose(env, "attach_btf_id %u is not a typedef\n",
 				btf_id);
 			return -EINVAL;
 		}
-		if (strncmp(prefix, tname, sizeof(prefix) - 1)) {
-			bpf_log(log, "attach_btf_id %u points to wrong type name %s\n",
+		tname = btf_name_by_offset(btf_vmlinux, t->name_off);
+		if (!tname || strncmp(prefix, tname, sizeof(prefix) - 1)) {
+			verbose(env, "attach_btf_id %u points to wrong type name %s\n",
 				btf_id, tname);
 			return -EINVAL;
 		}
 		tname += sizeof(prefix) - 1;
-		t = btf_type_by_id(btf, t->type);
+		t = btf_type_by_id(btf_vmlinux, t->type);
 		if (!btf_type_is_ptr(t))
 			/* should never happen in valid vmlinux build */
 			return -EINVAL;
-		t = btf_type_by_id(btf, t->type);
+		t = btf_type_by_id(btf_vmlinux, t->type);
 		if (!btf_type_is_func_proto(t))
 			/* should never happen in valid vmlinux build */
 			return -EINVAL;
 
-		break;
-	case BPF_TRACE_ITER:
-		if (!btf_type_is_func(t)) {
-			bpf_log(log, "attach_btf_id %u is not a function\n",
-				btf_id);
-			return -EINVAL;
-		}
-		t = btf_type_by_id(btf, t->type);
-		if (!btf_type_is_func_proto(t))
-			return -EINVAL;
-		ret = btf_distill_func_proto(log, btf, t, tname, &tgt_info->fmodel);
-		if (ret)
-			return ret;
-		break;
-	default:
-		if (!prog_extension)
-			return -EINVAL;
-		fallthrough;
-	case BPF_MODIFY_RETURN:
-	case BPF_LSM_MAC:
-	case BPF_TRACE_FENTRY:
-	case BPF_TRACE_FEXIT:
-		if (!btf_type_is_func(t)) {
-			bpf_log(log, "attach_btf_id %u is not a function\n",
-				btf_id);
-			return -EINVAL;
-		}
-		if (prog_extension &&
-		    btf_check_type_match(log, prog, btf, t))
-			return -EINVAL;
-		t = btf_type_by_id(btf, t->type);
-		if (!btf_type_is_func_proto(t))
-			return -EINVAL;
-
-		if ((prog->aux->saved_dst_prog_type || prog->aux->saved_dst_attach_type) &&
-		    (!tgt_prog || prog->aux->saved_dst_prog_type != tgt_prog->type ||
-		     prog->aux->saved_dst_attach_type != tgt_prog->expected_attach_type))
-			return -EINVAL;
-
-		if (tgt_prog && conservative)
-			t = NULL;
-
-		ret = btf_distill_func_proto(log, btf, t, tname, &tgt_info->fmodel);
-		if (ret < 0)
-			return ret;
-
-		if (tgt_prog) {
-			if (subprog == 0)
-				addr = (long) tgt_prog->bpf_func;
-			else
-				addr = (long) tgt_prog->aux->func[subprog]->bpf_func;
-		} else {
-			addr = kallsyms_lookup_name(tname);
-			if (!addr) {
-				bpf_log(log,
-					"The address of function %s cannot be found\n",
-					tname);
-				return -ENOENT;
-			}
-		}
-
-		if (prog->aux->sleepable) {
-			ret = -EINVAL;
-			switch (prog->type) {
-			case BPF_PROG_TYPE_TRACING:
-				/* fentry/fexit/fmod_ret progs can be sleepable only if they are
-				 * attached to ALLOW_ERROR_INJECTION and are not in denylist.
-				 */
-				if (!check_non_sleepable_error_inject(btf_id) &&
-				    within_error_injection_list(addr))
-					ret = 0;
-				break;
-			case BPF_PROG_TYPE_LSM:
-				/* LSM progs check that they are attached to bpf_lsm_*() funcs.
-				 * Only some of them are sleepable.
-				 */
-				if (check_sleepable_lsm_hook(btf_id))
-					ret = 0;
-				break;
-			default:
-				break;
-			}
-			if (ret) {
-				bpf_log(log, "%s is not sleepable\n", tname);
-				return ret;
-			}
-		} else if (prog->expected_attach_type == BPF_MODIFY_RETURN) {
-			if (tgt_prog) {
-				bpf_log(log, "can't modify return codes of BPF programs\n");
-				return -EINVAL;
-			}
-			ret = check_attach_modify_return(addr, tname);
-			if (ret) {
-				bpf_log(log, "%s() is not modifiable\n", tname);
-				return ret;
-			}
-		}
-
-		break;
-	}
-	tgt_info->tgt_addr = addr;
-	tgt_info->tgt_name = tname;
-	tgt_info->tgt_type = t;
-	return 0;
-}
-
-static int check_attach_btf_id(struct bpf_verifier_env *env)
-{
-	struct bpf_prog *prog = env->prog;
-	struct bpf_prog *tgt_prog = prog->aux->dst_prog;
-	struct bpf_attach_target_info tgt_info = {};
-	u32 btf_id = prog->aux->attach_btf_id;
-	struct bpf_trampoline *tr;
-	int ret;
-	u64 key;
-
-	if (prog->aux->sleepable && prog->type != BPF_PROG_TYPE_TRACING &&
-	    prog->type != BPF_PROG_TYPE_LSM) {
-		verbose(env, "Only fentry/fexit/fmod_ret and lsm programs can be sleepable\n");
-		return -EINVAL;
-	}
-
-	if (prog->type == BPF_PROG_TYPE_STRUCT_OPS)
-		return check_struct_ops_btf_id(env);
-
-	if (prog->type != BPF_PROG_TYPE_TRACING &&
-	    prog->type != BPF_PROG_TYPE_LSM &&
-	    prog->type != BPF_PROG_TYPE_EXT)
-		return 0;
-
-	ret = bpf_check_attach_target(&env->log, prog, tgt_prog, btf_id, &tgt_info);
-	if (ret)
-		return ret;
-
-	if (tgt_prog && prog->type == BPF_PROG_TYPE_EXT) {
-		/* to make freplace equivalent to their targets, they need to
-		 * inherit env->ops and expected_attach_type for the rest of the
-		 * verification
+		/* remember two read only pointers that are valid for
+		 * the life time of the kernel
 		 */
-		env->ops = bpf_verifier_ops[tgt_prog->type];
-		prog->expected_attach_type = tgt_prog->expected_attach_type;
-	}
-
-	/* store info about the attachment target that will be used later */
-	prog->aux->attach_func_proto = tgt_info.tgt_type;
-	prog->aux->attach_func_name = tgt_info.tgt_name;
-
-	if (tgt_prog) {
-		prog->aux->saved_dst_prog_type = tgt_prog->type;
-		prog->aux->saved_dst_attach_type = tgt_prog->expected_attach_type;
-	}
-
-	if (prog->expected_attach_type == BPF_TRACE_RAW_TP) {
+		prog->aux->attach_func_name = tname;
+		prog->aux->attach_func_proto = t;
 		prog->aux->attach_btf_trace = true;
-		return 0;
-	} else if (prog->expected_attach_type == BPF_TRACE_ITER) {
-		if (!bpf_iter_prog_supported(prog))
-			return -EINVAL;
-		return 0;
 	}
-
-	if (prog->type == BPF_PROG_TYPE_LSM) {
-		ret = bpf_lsm_verify_prog(&env->log, prog);
-		if (ret < 0)
-			return ret;
-	}
-
-	key = bpf_trampoline_compute_key(tgt_prog, btf_id);
-	tr = bpf_trampoline_get(key, &tgt_info);
-	if (!tr)
-		return -ENOMEM;
-
-	prog->aux->dst_trampoline = tr;
 	return 0;
-}
-
-struct btf *bpf_get_btf_vmlinux(void)
-{
-	if (!btf_vmlinux && IS_ENABLED(CONFIG_DEBUG_INFO_BTF)) {
-		mutex_lock(&bpf_verifier_lock);
-		if (!btf_vmlinux)
-			btf_vmlinux = btf_parse_vmlinux();
-		mutex_unlock(&bpf_verifier_lock);
-	}
-	return btf_vmlinux;
 }
 
 int bpf_check(struct bpf_prog **prog, union bpf_attr *attr,
@@ -12476,8 +12109,12 @@ int bpf_check(struct bpf_prog **prog, union bpf_attr *attr,
 		/* Either gcc or pahole or kernel are broken. */
 		verbose(env, "in-kernel BTF is malformed\n");
 		ret = PTR_ERR(btf_vmlinux);
-		goto err_unlock;
+		goto skip_full_check;
 	}
+
+	ret = check_attach_btf_id(env);
+	if (ret)
+		goto skip_full_check;
 
 	env->strict_alignment = !!(attr->prog_flags & BPF_F_STRICT_ALIGNMENT);
 	if (!IS_ENABLED(CONFIG_HAVE_EFFICIENT_UNALIGNED_ACCESS))

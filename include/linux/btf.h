@@ -6,9 +6,6 @@
 
 #include <linux/types.h>
 #include <uapi/linux/btf.h>
-#include <uapi/linux/bpf.h>
-
-#define BTF_TYPE_EMIT(type) ((void)(type *)0)
 
 struct btf;
 struct btf_member;
@@ -203,6 +200,36 @@ static inline const struct btf_var_secinfo *btf_type_var_secinfo(
 		const struct btf_type *t)
 {
 	return (const struct btf_var_secinfo *)(t + 1);
+}
+
+static inline bool btf_type_is_ptr(const struct btf_type *t)
+{
+	return BTF_INFO_KIND(t->info) == BTF_KIND_PTR;
+}
+
+static inline bool btf_type_is_int(const struct btf_type *t)
+{
+	return BTF_INFO_KIND(t->info) == BTF_KIND_INT;
+}
+
+static inline bool btf_type_is_enum(const struct btf_type *t)
+{
+	return BTF_INFO_KIND(t->info) == BTF_KIND_ENUM;
+}
+
+static inline bool btf_type_is_typedef(const struct btf_type *t)
+{
+	return BTF_INFO_KIND(t->info) == BTF_KIND_TYPEDEF;
+}
+
+static inline bool btf_type_is_func(const struct btf_type *t)
+{
+	return BTF_INFO_KIND(t->info) == BTF_KIND_FUNC;
+}
+
+static inline bool btf_type_is_func_proto(const struct btf_type *t)
+{
+	return BTF_INFO_KIND(t->info) == BTF_KIND_FUNC_PROTO;
 }
 
 #ifdef CONFIG_BPF_SYSCALL
