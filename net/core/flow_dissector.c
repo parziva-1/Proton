@@ -272,54 +272,8 @@ __be32 __skb_flow_get_ports(const struct sk_buff *skb, int thoff, u8 ip_proto,
 }
 EXPORT_SYMBOL(__skb_flow_get_ports);
 
-static bool icmp_has_id(u8 type)
-{
-	switch (type) {
-	case ICMP_ECHO:
-	case ICMP_ECHOREPLY:
-	case ICMP_TIMESTAMP:
-	case ICMP_TIMESTAMPREPLY:
-	case ICMPV6_ECHO_REQUEST:
-	case ICMPV6_ECHO_REPLY:
-		return true;
-	}
-
-	return false;
-}
-
-/**
- * skb_flow_get_icmp_tci - extract ICMP(6) Type, Code and Identifier fields
- * @skb: sk_buff to extract from
- * @key_icmp: struct flow_dissector_key_icmp to fill
- * @data: raw buffer pointer to the packet
- * @toff: offset to extract at
- * @hlen: packet header length
- */
-void skb_flow_get_icmp_tci(const struct sk_buff *skb,
-			   struct flow_dissector_key_icmp *key_icmp,
-			   void *data, int thoff, int hlen)
-{
-	struct icmphdr *ih, _ih;
-
-	ih = __skb_header_pointer(skb, thoff, sizeof(_ih), data, hlen, &_ih);
-	if (!ih)
-		return;
-
-	key_icmp->type = ih->type;
-	key_icmp->code = ih->code;
-
-	/* As we use 0 to signal that the Id field is not present,
-	 * avoid confusion with packets without such field
-	 */
-	if (icmp_has_id(ih->type))
-		key_icmp->id = ih->un.echo.id ? : 1;
-	else
-		key_icmp->id = 0;
-}
-EXPORT_SYMBOL(skb_flow_get_icmp_tci);
-
-/* If FLOW_DISSECTOR_KEY_ICMP is set, dissect an ICMP packet
- * using skb_flow_get_icmp_tci().
+/* If FLOW_DISSECTOR_KEY_ICMP is set, get the Type and Code from an ICMP packet
+ * using skb_flow_get_be16().
  */
 static void __skb_flow_dissect_icmp(const struct sk_buff *skb,
 				    struct flow_dissector *flow_dissector,
@@ -334,8 +288,7 @@ static void __skb_flow_dissect_icmp(const struct sk_buff *skb,
 	key_icmp = skb_flow_dissector_target(flow_dissector,
 					     FLOW_DISSECTOR_KEY_ICMP,
 					     target_container);
-
-	skb_flow_get_icmp_tci(skb, key_icmp, data, thoff, hlen);
+	key_icmp->icmp = skb_flow_get_be16(skb, thoff, data, hlen);
 }
 
 void skb_flow_dissect_meta(const struct sk_buff *skb,
