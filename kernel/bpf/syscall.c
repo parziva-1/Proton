@@ -2000,7 +2000,7 @@ bpf_prog_load_check_attach(enum bpf_prog_type prog_type,
 		return -EINVAL;
 
 	switch (prog_type) {
-	case BPF_PROG_TYPE_RAW_TRACEPOINT:
+	case BPF_PROG_TYPE_TRACING:
 		if (btf_id > BTF_MAX_TYPE)
 			return -EINVAL;
 		break;
@@ -2824,13 +2824,13 @@ static int bpf_raw_tracepoint_open(const union bpf_attr *attr)
 		return PTR_ERR(prog);
 
 	if (prog->type != BPF_PROG_TYPE_RAW_TRACEPOINT &&
+	    prog->type != BPF_PROG_TYPE_TRACING &&
 	    prog->type != BPF_PROG_TYPE_RAW_TRACEPOINT_WRITABLE) {
 		err = -EINVAL;
 		goto out_put_prog;
 	}
 
-	if (prog->type == BPF_PROG_TYPE_RAW_TRACEPOINT &&
-	    prog->aux->attach_btf_id) {
+	if (prog->type == BPF_PROG_TYPE_TRACING) {
 		if (attr->raw_tracepoint.name) {
 			/* raw_tp name should not be specified in raw_tp
 			 * programs that were verified via in-kernel BTF info

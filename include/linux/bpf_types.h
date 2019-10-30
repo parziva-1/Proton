@@ -36,18 +36,12 @@ BPF_PROG_TYPE(BPF_PROG_TYPE_FLOW_DISSECTOR, flow_dissector,
 	      struct __sk_buff, struct bpf_flow_dissector)
 #endif
 #ifdef CONFIG_BPF_EVENTS
-BPF_PROG_TYPE(BPF_PROG_TYPE_KPROBE, kprobe,
-	      bpf_user_pt_regs_t, struct pt_regs)
-BPF_PROG_TYPE(BPF_PROG_TYPE_TRACEPOINT, tracepoint,
-	      __u64, u64)
-BPF_PROG_TYPE(BPF_PROG_TYPE_PERF_EVENT, perf_event,
-	      struct bpf_perf_event_data, struct bpf_perf_event_data_kern)
-BPF_PROG_TYPE(BPF_PROG_TYPE_RAW_TRACEPOINT, raw_tracepoint,
-	      struct bpf_raw_tracepoint_args, u64)
-BPF_PROG_TYPE(BPF_PROG_TYPE_RAW_TRACEPOINT_WRITABLE, raw_tracepoint_writable,
-	      struct bpf_raw_tracepoint_args, u64)
-BPF_PROG_TYPE(BPF_PROG_TYPE_TRACING, tracing,
-	      void *, void *)
+BPF_PROG_TYPE(BPF_PROG_TYPE_KPROBE, kprobe)
+BPF_PROG_TYPE(BPF_PROG_TYPE_TRACEPOINT, tracepoint)
+BPF_PROG_TYPE(BPF_PROG_TYPE_PERF_EVENT, perf_event)
+BPF_PROG_TYPE(BPF_PROG_TYPE_RAW_TRACEPOINT, raw_tracepoint)
+BPF_PROG_TYPE(BPF_PROG_TYPE_RAW_TRACEPOINT_WRITABLE, raw_tracepoint_writable)
+BPF_PROG_TYPE(BPF_PROG_TYPE_TRACING, tracing)
 #endif
 #ifdef CONFIG_CGROUP_BPF
 BPF_PROG_TYPE(BPF_PROG_TYPE_CGROUP_DEVICE, cg_dev,
