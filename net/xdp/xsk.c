@@ -267,9 +267,11 @@ out_unlock:
 	return err;
 }
 
-int __xsk_map_redirect(struct xdp_sock *xs, struct xdp_buff *xdp)
+int __xsk_map_redirect(struct bpf_map *map, struct xdp_buff *xdp,
+		       struct xdp_sock *xs)
 {
-	struct list_head *flush_list = this_cpu_ptr(&xskmap_flush_list);
+	struct xsk_map *m = container_of(map, struct xsk_map, map);
+	struct list_head *flush_list = this_cpu_ptr(m->flush_list);
 	int err;
 
 	err = xsk_rcv(xs, xdp);
@@ -282,9 +284,10 @@ int __xsk_map_redirect(struct xdp_sock *xs, struct xdp_buff *xdp)
 	return 0;
 }
 
-void __xsk_map_flush(void)
+void __xsk_map_flush(struct bpf_map *map)
 {
-	struct list_head *flush_list = this_cpu_ptr(&xskmap_flush_list);
+	struct xsk_map *m = container_of(map, struct xsk_map, map);
+	struct list_head *flush_list = this_cpu_ptr(m->flush_list);
 	struct xdp_sock *xs, *tmp;
 
 	list_for_each_entry_safe(xs, tmp, flush_list, flush_node) {

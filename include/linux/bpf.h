@@ -1475,12 +1475,18 @@ static inline int sock_map_prog_detach(const union bpf_attr *attr,
 	return -EOPNOTSUPP;
 }
 
-static inline int sock_map_update_elem_sys(struct bpf_map *map, void *key, void *value,
-					   u64 flags)
+#if defined(CONFIG_INET) && defined(CONFIG_BPF_SYSCALL)
+void bpf_sk_reuseport_detach(struct sock *sk);
+int bpf_fd_reuseport_array_lookup_elem(struct bpf_map *map, void *key,
+				       void *value);
+int bpf_fd_reuseport_array_update_elem(struct bpf_map *map, void *key,
+				       void *value, u64 map_flags);
+#else
+static inline void bpf_sk_reuseport_detach(struct sock *sk)
 {
-	return -EOPNOTSUPP;
 }
 
+#ifdef CONFIG_BPF_SYSCALL
 static inline int bpf_fd_reuseport_array_lookup_elem(struct bpf_map *map,
 						     void *key, void *value)
 {

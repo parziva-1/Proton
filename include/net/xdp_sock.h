@@ -66,10 +66,21 @@ struct xdp_umem {
 	struct list_head xsk_list;
 };
 
+/* Nodes are linked in the struct xdp_sock map_list field, and used to
+ * track which maps a certain socket reside in.
+ */
+
 struct xsk_map {
 	struct bpf_map map;
+	struct list_head __percpu *flush_list;
 	spinlock_t lock; /* Synchronize map updates */
 	struct xdp_sock *xsk_map[];
+};
+
+struct xsk_map_node {
+	struct list_head node;
+	struct xsk_map *map;
+	struct xdp_sock **map_entry;
 };
 
 struct xdp_sock {
@@ -105,6 +116,7 @@ struct xdp_sock {
 struct xdp_buff;
 #ifdef CONFIG_XDP_SOCKETS
 int xsk_generic_rcv(struct xdp_sock *xs, struct xdp_buff *xdp);
+bool xsk_is_setup_for_bpf_map(struct xdp_sock *xs);
 /* Used from netdev driver */
 bool xsk_umem_has_addrs(struct xdp_umem *umem, u32 cnt);
 u64 *xsk_umem_peek_addr(struct xdp_umem *umem, u64 *addr);
@@ -123,8 +135,13 @@ void xsk_clear_rx_need_wakeup(struct xdp_umem *umem);
 void xsk_clear_tx_need_wakeup(struct xdp_umem *umem);
 bool xsk_umem_uses_need_wakeup(struct xdp_umem *umem);
 
-int __xsk_map_redirect(struct xdp_sock *xs, struct xdp_buff *xdp);
-void __xsk_map_flush(void);
+void xsk_map_try_sock_delete(struct xsk_map *map, struct xdp_sock *xs,
+			     struct xdp_sock **map_entry);
+int xsk_map_inc(struct xsk_map *map);
+void xsk_map_put(struct xsk_map *map);
+int __xsk_map_redirect(struct bpf_map *map, struct xdp_buff *xdp,
+		       struct xdp_sock *xs);
+void __xsk_map_flush(struct bpf_map *map);
 
 static inline struct xdp_sock *__xsk_map_lookup_elem(struct bpf_map *map,
 						     u32 key)
@@ -226,6 +243,11 @@ static inline u64 xsk_umem_adjust_offset(struct xdp_umem *umem, u64 address,
 static inline int xsk_generic_rcv(struct xdp_sock *xs, struct xdp_buff *xdp)
 {
 	return -ENOTSUPP;
+}
+
+static inline bool xsk_is_setup_for_bpf_map(struct xdp_sock *xs)
+{
+	return false;
 }
 
 static inline bool xsk_umem_has_addrs(struct xdp_umem *umem, u32 cnt)
@@ -347,12 +369,13 @@ static inline u64 xsk_umem_adjust_offset(struct xdp_umem *umem, u64 handle,
 	return 0;
 }
 
-static inline int __xsk_map_redirect(struct xdp_sock *xs, struct xdp_buff *xdp)
+static inline int __xsk_map_redirect(struct bpf_map *map, struct xdp_buff *xdp,
+				     struct xdp_sock *xs)
 {
 	return -EOPNOTSUPP;
 }
 
-static inline void __xsk_map_flush(void)
+static inline void __xsk_map_flush(struct bpf_map *map)
 {
 }
 
