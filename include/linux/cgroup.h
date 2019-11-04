@@ -707,6 +707,11 @@ static inline void cgroup_kthread_ready(void)
 	current->no_cgroup_migration = 0;
 }
 
+static inline u64 cgroup_get_kernfs_id(struct cgroup *cgrp)
+{
+	return cgrp->kn->id;
+}
+
 void cgroup_path_from_kernfs_id(u64 id, char *buf, size_t buflen);
 #else /* !CONFIG_CGROUPS */
 
@@ -735,6 +740,10 @@ static inline int cgroup_init_early(void) { return 0; }
 static inline int cgroup_init(void) { return 0; }
 static inline void cgroup_init_kthreadd(void) {}
 static inline void cgroup_kthread_ready(void) {}
+static inline union u64 cgroup_get_kernfs_id(struct cgroup *cgrp)
+{
+	return 0;
+}
 
 static inline struct cgroup *cgroup_parent(struct cgroup *cgrp)
 {
