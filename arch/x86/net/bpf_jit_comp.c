@@ -232,65 +232,18 @@ struct jit_context {
 /* number of bytes emit_call() needs to generate call instruction */
 #define X86_CALL_SIZE		5
 
-/* Number of bytes emit_patch() needs to generate instructions */
-#define X86_PATCH_SIZE		5
-/* Number of bytes that will be skipped on tailcall */
-#define X86_TAIL_CALL_OFFSET	11
+#define PROLOGUE_SIZE		25
 
 static void push_callee_regs(u8 **pprog, bool *callee_regs_used)
 {
 	u8 *prog = *pprog;
-	int cnt = 0;
-
-	if (callee_regs_used[0])
-		EMIT1(0x53);         /* push rbx */
-	if (callee_regs_used[1])
-		EMIT2(0x41, 0x55);   /* push r13 */
-	if (callee_regs_used[2])
-		EMIT2(0x41, 0x56);   /* push r14 */
-	if (callee_regs_used[3])
-		EMIT2(0x41, 0x57);   /* push r15 */
-	*pprog = prog;
-}
-
-static void pop_callee_regs(u8 **pprog, bool *callee_regs_used)
-{
-	u8 *prog = *pprog;
-	int cnt = 0;
-
-	if (callee_regs_used[3])
-		EMIT2(0x41, 0x5F);   /* pop r15 */
-	if (callee_regs_used[2])
-		EMIT2(0x41, 0x5E);   /* pop r14 */
-	if (callee_regs_used[1])
-		EMIT2(0x41, 0x5D);   /* pop r13 */
-	if (callee_regs_used[0])
-		EMIT1(0x5B);         /* pop rbx */
-	*pprog = prog;
-}
-
-/*
- * Emit x86-64 prologue code for BPF program.
- * bpf_tail_call helper will skip the first X86_TAIL_CALL_OFFSET bytes
- * while jumping to another program
- */
-static void emit_prologue(u8 **pprog, u32 stack_depth, bool ebpf_from_cbpf,
-			  bool tail_call_reachable, bool is_subprog)
-{
-	u8 *prog = *pprog;
-	int cnt = X86_PATCH_SIZE;
+	int cnt = X86_CALL_SIZE;
 
 	/* BPF trampoline can be made to work without these nops,
 	 * but let's waste 5 bytes for now and optimize later
 	 */
 	memcpy(prog, ideal_nops[NOP_ATOMIC5], cnt);
 	prog += cnt;
-	if (!ebpf_from_cbpf) {
-		if (tail_call_reachable && !is_subprog)
-			EMIT2(0x31, 0xC0); /* xor eax, eax */
-		else
-			EMIT2(0x66, 0x90); /* nop2 */
-	}
 	EMIT1(0x55);             /* push rbp */
 	EMIT3(0x48, 0x89, 0xE5); /* mov rbp, rsp */
 	/* sub rsp, rounded_stack_depth */
