@@ -36,12 +36,18 @@ BPF_PROG_TYPE(BPF_PROG_TYPE_FLOW_DISSECTOR, flow_dissector,
 	      struct __sk_buff, struct bpf_flow_dissector)
 #endif
 #ifdef CONFIG_BPF_EVENTS
-BPF_PROG_TYPE(BPF_PROG_TYPE_KPROBE, kprobe)
-BPF_PROG_TYPE(BPF_PROG_TYPE_TRACEPOINT, tracepoint)
-BPF_PROG_TYPE(BPF_PROG_TYPE_PERF_EVENT, perf_event)
-BPF_PROG_TYPE(BPF_PROG_TYPE_RAW_TRACEPOINT, raw_tracepoint)
-BPF_PROG_TYPE(BPF_PROG_TYPE_RAW_TRACEPOINT_WRITABLE, raw_tracepoint_writable)
-BPF_PROG_TYPE(BPF_PROG_TYPE_TRACING, tracing)
+BPF_PROG_TYPE(BPF_PROG_TYPE_KPROBE, kprobe,
+	      bpf_user_pt_regs_t, struct pt_regs)
+BPF_PROG_TYPE(BPF_PROG_TYPE_TRACEPOINT, tracepoint,
+	      __u64, u64)
+BPF_PROG_TYPE(BPF_PROG_TYPE_PERF_EVENT, perf_event,
+	      struct bpf_perf_event_data, struct bpf_perf_event_data_kern)
+BPF_PROG_TYPE(BPF_PROG_TYPE_RAW_TRACEPOINT, raw_tracepoint,
+	      struct bpf_raw_tracepoint_args, u64)
+BPF_PROG_TYPE(BPF_PROG_TYPE_RAW_TRACEPOINT_WRITABLE, raw_tracepoint_writable,
+	      struct bpf_raw_tracepoint_args, u64)
+BPF_PROG_TYPE(BPF_PROG_TYPE_TRACING, tracing,
+	      void *, void *)
 #endif
 #ifdef CONFIG_CGROUP_BPF
 BPF_PROG_TYPE(BPF_PROG_TYPE_CGROUP_DEVICE, cg_dev,
@@ -58,18 +64,6 @@ BPF_PROG_TYPE(BPF_PROG_TYPE_LIRC_MODE2, lirc_mode2,
 #ifdef CONFIG_INET
 BPF_PROG_TYPE(BPF_PROG_TYPE_SK_REUSEPORT, sk_reuseport,
 	      struct sk_reuseport_md, struct sk_reuseport_kern)
-BPF_PROG_TYPE(BPF_PROG_TYPE_SK_LOOKUP, sk_lookup,
-	      struct bpf_sk_lookup, struct bpf_sk_lookup_kern)
-#endif
-#if defined(CONFIG_BPF_JIT)
-BPF_PROG_TYPE(BPF_PROG_TYPE_STRUCT_OPS, bpf_struct_ops,
-	      void *, void *)
-BPF_PROG_TYPE(BPF_PROG_TYPE_EXT, bpf_extension,
-	      void *, void *)
-#ifdef CONFIG_BPF_LSM
-BPF_PROG_TYPE(BPF_PROG_TYPE_LSM, lsm,
-	       void *, void *)
-#endif /* CONFIG_BPF_LSM */
 #endif
 
 BPF_MAP_TYPE(BPF_MAP_TYPE_ARRAY, array_map_ops)
