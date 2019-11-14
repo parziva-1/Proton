@@ -5250,6 +5250,9 @@ static int check_func_call(struct bpf_verifier_env *env, struct bpf_insn *insn,
 	/* only increment it after check_reg_arg() finished */
 	state->curframe++;
 
+	if (btf_check_func_arg_match(env, subprog))
+		return -EINVAL;
+
 	/* and go analyze first insn of the callee */
 	*insn_idx = target_insn;
 
@@ -8764,6 +8767,7 @@ static int check_btf_func(struct bpf_verifier_env *env,
 	u32 krec_size = sizeof(struct bpf_func_info);
 	struct bpf_func_info *krecord;
 	struct bpf_func_info_aux *info_aux = NULL;
+	const struct btf_type *type;
 	struct bpf_prog *prog;
 	const struct btf *btf;
 	void __user *urecord;
@@ -8868,7 +8872,6 @@ static int check_btf_func(struct bpf_verifier_env *env,
 			verbose(env, "tail_call is only allowed in functions that return 'int'.\n");
 			goto err_free;
 		}
-
 		prev_offset = krecord[i].insn_off;
 		urecord += urec_size;
 	}
@@ -9861,6 +9864,28 @@ static int do_check(struct bpf_verifier_env *env)
 	int insn_cnt = env->prog->len;
 	bool do_print_state = false;
 	int prev_insn_idx = -1;
+
+	env->prev_linfo = NULL;
+
+	state = kzalloc(sizeof(struct bpf_verifier_state), GFP_KERNEL);
+	if (!state)
+		return -ENOMEM;
+	state->curframe = 0;
+	state->speculative = false;
+	state->branches = 1;
+	state->frame[0] = kzalloc(sizeof(struct bpf_func_state), GFP_KERNEL);
+	if (!state->frame[0]) {
+		kfree(state);
+		return -ENOMEM;
+	}
+	env->cur_state = state;
+	init_func_state(env, state->frame[0],
+			BPF_MAIN_FUNC /* callsite */,
+			0 /* frameno */,
+			0 /* subprogno, zero == main subprog */);
+
+	if (btf_check_func_arg_match(env, 0))
+		return -EINVAL;
 
 	for (;;) {
 		struct bpf_insn *insn;
