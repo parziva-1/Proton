@@ -96,37 +96,6 @@ struct bpf_map_ops {
 	int (*map_direct_value_meta)(const struct bpf_map *map,
 				     u64 imm, u32 *off);
 	int (*map_mmap)(struct bpf_map *map, struct vm_area_struct *vma);
-	__poll_t (*map_poll)(struct bpf_map *map, struct file *filp,
-			     struct poll_table_struct *pts);
-
-	/* Functions called by bpf_local_storage maps */
-	int (*map_local_storage_charge)(struct bpf_local_storage_map *smap,
-					void *owner, u32 size);
-	void (*map_local_storage_uncharge)(struct bpf_local_storage_map *smap,
-					   void *owner, u32 size);
-	struct bpf_local_storage __rcu ** (*map_owner_storage_ptr)(void *owner);
-
-	/* map_meta_equal must be implemented for maps that can be
-	 * used as an inner map.  It is a runtime check to ensure
-	 * an inner map can be inserted to an outer map.
-	 *
-	 * Some properties of the inner map has been used during the
-	 * verification time.  When inserting an inner map at the runtime,
-	 * map_meta_equal has to ensure the inserting map has the same
-	 * properties that the verifier has used earlier.
-	 */
-	bool (*map_meta_equal)(const struct bpf_map *meta0,
-			       const struct bpf_map *meta1);
-
-	/* BTF name and id of struct allocated by map_alloc */
-	const char * const map_btf_name;
-	int *map_btf_id;
-
-	/* bpf_iter info used to open a seq_file */
-	const struct bpf_iter_seq_info *iter_seq_info;
-
-	ANDROID_KABI_RESERVE(1);
-	ANDROID_KABI_RESERVE(2);
 };
 
 struct bpf_map_memory {
@@ -156,8 +125,7 @@ struct bpf_map {
 	struct btf *btf;
 	struct bpf_map_memory memory;
 	char name[BPF_OBJ_NAME_LEN];
-	u32 btf_vmlinux_value_type_id;
-	bool bypass_spec_v1;
+	bool unpriv_array;
 	bool frozen; /* write-once; write-protected by freeze_mutex */
 	/* 22 bytes hole */
 
@@ -168,7 +136,7 @@ struct bpf_map {
 	atomic64_t usercnt;
 	struct work_struct work;
 	struct mutex freeze_mutex;
-	atomic64_t writecnt;
+	u64 writecnt; /* writable mmap cnt; protected by freeze_mutex */
 };
 
 static inline bool map_value_has_spin_lock(const struct bpf_map *map)

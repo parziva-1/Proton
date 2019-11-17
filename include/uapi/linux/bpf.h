@@ -415,21 +415,9 @@ enum {
 	BPF_F_CLONE		= (1U << 9),
 
 /* Enable memory-mapping BPF map */
-	BPF_F_MMAPABLE		= (1U << 10),
+#define BPF_F_MMAPABLE		(1U << 10)
 
-/* Share perf_event among processes */
-	BPF_F_PRESERVE_ELEMS	= (1U << 11),
-
-/* Create a map that is suitable to be an inner map with dynamic max entries */
-	BPF_F_INNER_MAP		= (1U << 12),
-};
-
-/* Flags for BPF_PROG_QUERY. */
-
-/* Query effective (directly attached + inherited from ancestor cgroups)
- * programs that will be executed for events within a cgroup.
- * attach_flags with this flag are returned only for directly attached programs.
- */
+/* flags for BPF_PROG_QUERY */
 #define BPF_F_QUERY_EFFECTIVE	(1U << 0)
 
 /* Flags for BPF_PROG_TEST_RUN */
