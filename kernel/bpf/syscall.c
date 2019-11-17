@@ -1850,10 +1850,7 @@ static struct bpf_prog *____bpf_prog_get(struct fd f)
 	return f.file->private_data;
 }
 
-/* prog's refcnt limit */
-#define BPF_MAX_REFCNT 32768
-
-struct bpf_prog *bpf_prog_add(struct bpf_prog *prog, int i)
+void bpf_prog_add(struct bpf_prog *prog, int i)
 {
 	atomic64_add(i, &prog->aux->refcnt);
 }
