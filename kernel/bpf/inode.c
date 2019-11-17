@@ -38,9 +38,6 @@ static void *bpf_any_get(void *raw, enum bpf_type type)
 	case BPF_TYPE_MAP:
 		bpf_map_inc_with_uref(raw);
 		break;
-	case BPF_TYPE_LINK:
-		bpf_link_inc(raw);
-		break;
 	default:
 		WARN_ON_ONCE(1);
 		break;

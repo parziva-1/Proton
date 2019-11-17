@@ -839,7 +839,6 @@ static int map_create(union bpf_attr *attr)
 
 	atomic64_set(&map->refcnt, 1);
 	atomic64_set(&map->usercnt, 1);
-	mutex_init(&map->freeze_mutex);
 
 	map->spin_lock_off = -EINVAL;
 	if (attr->btf_key_type_id || attr->btf_value_type_id ||
@@ -931,21 +930,6 @@ void bpf_map_inc_with_uref(struct bpf_map *map)
 	atomic64_inc(&map->usercnt);
 }
 EXPORT_SYMBOL_GPL(bpf_map_inc_with_uref);
-
-struct bpf_map *bpf_map_get(u32 ufd)
-{
-	struct fd f = fdget(ufd);
-	struct bpf_map *map;
-
-	map = __bpf_map_get(f);
-	if (IS_ERR(map))
-		return map;
-
-	bpf_map_inc(map);
-	fdput(f);
-
-	return map;
-}
 
 struct bpf_map *bpf_map_get_with_uref(u32 ufd)
 {
@@ -1866,7 +1850,10 @@ static struct bpf_prog *____bpf_prog_get(struct fd f)
 	return f.file->private_data;
 }
 
-void bpf_prog_add(struct bpf_prog *prog, int i)
+/* prog's refcnt limit */
+#define BPF_MAX_REFCNT 32768
+
+struct bpf_prog *bpf_prog_add(struct bpf_prog *prog, int i)
 {
 	atomic64_add(i, &prog->aux->refcnt);
 }

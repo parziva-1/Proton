@@ -90,8 +90,7 @@ void *bpf_map_fd_get_ptr(struct bpf_map *map,
 	if (IS_ERR(inner_map))
 		return inner_map;
 
-	inner_map_meta = map->inner_map_meta;
-	if (inner_map_meta->ops->map_meta_equal(inner_map_meta, inner_map))
+	if (bpf_map_meta_equal(map->inner_map_meta, inner_map))
 		bpf_map_inc(inner_map);
 	else
 		inner_map = ERR_PTR(-EINVAL);
