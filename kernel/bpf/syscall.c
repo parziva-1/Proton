@@ -1420,36 +1420,6 @@ static int find_prog_type(enum bpf_prog_type type, struct bpf_prog *prog)
 	return 0;
 }
 
-enum bpf_audit {
-	BPF_AUDIT_LOAD,
-	BPF_AUDIT_UNLOAD,
-	BPF_AUDIT_MAX,
-};
-
-static const char * const bpf_audit_str[BPF_AUDIT_MAX] = {
-	[BPF_AUDIT_LOAD]   = "LOAD",
-	[BPF_AUDIT_UNLOAD] = "UNLOAD",
-};
-
-static void bpf_audit_prog(const struct bpf_prog *prog, unsigned int op)
-{
-	struct audit_context *ctx = NULL;
-	struct audit_buffer *ab;
-
-	if (WARN_ON_ONCE(op >= BPF_AUDIT_MAX))
-		return;
-	if (audit_enabled == AUDIT_OFF)
-		return;
-	if (op == BPF_AUDIT_LOAD)
-		ctx = audit_context();
-	ab = audit_log_start(ctx, GFP_ATOMIC, AUDIT_BPF);
-	if (unlikely(!ab))
-		return;
-	audit_log_format(ab, "prog-id=%u op=%s",
-			 prog->aux->id, bpf_audit_str[op]);
-	audit_log_end(ab);
-}
-
 int __bpf_prog_charge(struct user_struct *user, u32 pages)
 {
 	unsigned long memlock_limit = rlimit(RLIMIT_MEMLOCK) >> PAGE_SHIFT;
@@ -1544,7 +1514,6 @@ static void __bpf_prog_put_rcu(struct rcu_head *rcu)
 
 	kvfree(aux->func_info);
 	kfree(aux->func_info_aux);
-	free_used_maps(aux);
 	bpf_prog_uncharge_memlock(aux->prog);
 	security_bpf_prog_free(aux);
 	bpf_prog_free(aux->prog);

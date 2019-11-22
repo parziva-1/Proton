@@ -2177,23 +2177,25 @@ int bpf_prog_array_copy_info(struct bpf_prog_array *array,
 								     : 0;
 }
 
-void __bpf_free_used_maps(struct bpf_prog_aux *aux,
-			  struct bpf_map **used_maps, u32 len)
+static void bpf_free_cgroup_storage(struct bpf_prog_aux *aux)
 {
-	struct bpf_map *map;
-	u32 i;
+	enum bpf_cgroup_storage_type stype;
 
-	for (i = 0; i < len; i++) {
-		map = used_maps[i];
-		if (map->ops->map_poke_untrack)
-			map->ops->map_poke_untrack(map, aux);
-		bpf_map_put(map);
+	for_each_cgroup_storage_type(stype) {
+		if (!aux->cgroup_storage[stype])
+			continue;
+		bpf_cgroup_storage_release(aux->prog,
+					   aux->cgroup_storage[stype]);
 	}
 }
 
 static void bpf_free_used_maps(struct bpf_prog_aux *aux)
 {
-	__bpf_free_used_maps(aux, aux->used_maps, aux->used_map_cnt);
+	int i;
+
+	bpf_free_cgroup_storage(aux);
+	for (i = 0; i < aux->used_map_cnt; i++)
+		bpf_map_put(aux->used_maps[i]);
 	kfree(aux->used_maps);
 }
 

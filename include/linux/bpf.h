@@ -1411,17 +1411,6 @@ static inline void bpf_map_put(struct bpf_map *map)
 {
 }
 
-static inline struct bpf_prog *bpf_prog_by_id(u32 id)
-{
-	return ERR_PTR(-ENOTSUPP);
-}
-
-static inline const struct bpf_func_proto *
-bpf_base_func_proto(enum bpf_func_id func_id)
-{
-	return NULL;
-}
-
 static inline bool unprivileged_ebpf_enabled(void)
 {
 	return false;
