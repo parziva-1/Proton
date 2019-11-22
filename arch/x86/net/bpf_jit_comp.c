@@ -273,44 +273,77 @@ static int __bpf_arch_text_poke(void *ip, enum bpf_text_poke_type t,
 				void *old_addr, void *new_addr,
 				const bool text_live)
 {
+	int (*emit_patch_fn)(u8 **pprog, void *func, void *ip);
 	const u8 *nop_insn = ideal_nops[NOP_ATOMIC5];
-	u8 old_insn[X86_PATCH_SIZE];
-	u8 new_insn[X86_PATCH_SIZE];
+	u8 old_insn[X86_PATCH_SIZE] = {};
+	u8 new_insn[X86_PATCH_SIZE] = {};
 	u8 *prog;
 	int ret;
 
-	memcpy(old_insn, nop_insn, X86_PATCH_SIZE);
-	if (old_addr) {
-		prog = old_insn;
-		ret = t == BPF_MOD_CALL ?
-		      emit_call(&prog, old_addr, ip) :
-		      emit_jump(&prog, old_addr, ip);
-		if (ret)
-			return ret;
+	switch (t) {
+	case BPF_MOD_NOP_TO_CALL ... BPF_MOD_CALL_TO_NOP:
+		emit_patch_fn = emit_call;
+		break;
+	case BPF_MOD_NOP_TO_JUMP ... BPF_MOD_JUMP_TO_NOP:
+		emit_patch_fn = emit_jump;
+		break;
+	default:
+		return -ENOTSUPP;
 	}
 
-	memcpy(new_insn, nop_insn, X86_PATCH_SIZE);
-	if (new_addr) {
-		prog = new_insn;
-		ret = t == BPF_MOD_CALL ?
-		      emit_call(&prog, new_addr, ip) :
-		      emit_jump(&prog, new_addr, ip);
-		if (ret)
-			return ret;
+	switch (t) {
+	case BPF_MOD_NOP_TO_CALL:
+	case BPF_MOD_NOP_TO_JUMP:
+		if (!old_addr && new_addr) {
+			memcpy(old_insn, nop_insn, X86_PATCH_SIZE);
+
+			prog = new_insn;
+			ret = emit_patch_fn(&prog, new_addr, ip);
+			if (ret)
+				return ret;
+			break;
+		}
+		return -ENXIO;
+	case BPF_MOD_CALL_TO_CALL:
+	case BPF_MOD_JUMP_TO_JUMP:
+		if (old_addr && new_addr) {
+			prog = old_insn;
+			ret = emit_patch_fn(&prog, old_addr, ip);
+			if (ret)
+				return ret;
+
+			prog = new_insn;
+			ret = emit_patch_fn(&prog, new_addr, ip);
+			if (ret)
+				return ret;
+			break;
+		}
+		return -ENXIO;
+	case BPF_MOD_CALL_TO_NOP:
+	case BPF_MOD_JUMP_TO_NOP:
+		if (old_addr && !new_addr) {
+			memcpy(new_insn, nop_insn, X86_PATCH_SIZE);
+
+			prog = old_insn;
+			ret = emit_patch_fn(&prog, old_addr, ip);
+			if (ret)
+				return ret;
+			break;
+		}
+		return -ENXIO;
+	default:
+		return -ENOTSUPP;
 	}
 
 	ret = -EBUSY;
 	mutex_lock(&text_mutex);
 	if (memcmp(ip, old_insn, X86_PATCH_SIZE))
 		goto out;
-	ret = 1;
-	if (memcmp(ip, new_insn, X86_PATCH_SIZE)) {
-		if (text_live)
-			text_poke_bp(ip, new_insn, X86_PATCH_SIZE, NULL);
-		else
-			memcpy(ip, new_insn, X86_PATCH_SIZE);
-		ret = 0;
-	}
+	if (text_live)
+		text_poke_bp(ip, new_insn, X86_PATCH_SIZE, NULL);
+	else
+		memcpy(ip, new_insn, X86_PATCH_SIZE);
+	ret = 0;
 out:
 	mutex_unlock(&text_mutex);
 	return ret;
@@ -327,22 +360,6 @@ int bpf_arch_text_poke(void *ip, enum bpf_text_poke_type t,
 	return __bpf_arch_text_poke(ip, t, old_addr, new_addr, true);
 }
 
-static int get_pop_bytes(bool *callee_regs_used)
-{
-	int bytes = 0;
-
-	if (callee_regs_used[3])
-		bytes += 2;
-	if (callee_regs_used[2])
-		bytes += 2;
-	if (callee_regs_used[1])
-		bytes += 2;
-	if (callee_regs_used[0])
-		bytes += 1;
-
-	return bytes;
-}
-
 /*
  * Generate the following code:
  *
@@ -357,8 +374,7 @@ static int get_pop_bytes(bool *callee_regs_used)
  *   goto *(prog->bpf_func + prologue_size);
  * out:
  */
-static void emit_bpf_tail_call_indirect(u8 **pprog, bool *callee_regs_used,
-					u32 stack_depth)
+static void emit_bpf_tail_call_indirect(u8 **pprog)
 {
 	int tcc_off = -4 - round_up(stack_depth, 8);
 	u8 *prog = *pprog;
@@ -441,55 +457,23 @@ static void emit_bpf_tail_call_indirect(u8 **pprog, bool *callee_regs_used,
 }
 
 static void emit_bpf_tail_call_direct(struct bpf_jit_poke_descriptor *poke,
-				      u8 **pprog, int addr, u8 *image,
-				      bool *callee_regs_used, u32 stack_depth)
+				      u8 **pprog, int addr, u8 *image)
 {
-	int tcc_off = -4 - round_up(stack_depth, 8);
 	u8 *prog = *pprog;
-	int pop_bytes = 0;
-	int off1 = 27;
-	int poke_off;
 	int cnt = 0;
-
-	/* count the additional bytes used for popping callee regs to stack
-	 * that need to be taken into account for jump offset that is used for
-	 * bailing out from of the tail call when limit is reached
-	 */
-	pop_bytes = get_pop_bytes(callee_regs_used);
-	off1 += pop_bytes;
-
-	/*
-	 * total bytes for:
-	 * - nop5/ jmpq $off
-	 * - pop callee regs
-	 * - sub rsp, $val
-	 * - pop rax
-	 */
-	poke_off = X86_PATCH_SIZE + pop_bytes + 7 + 1;
 
 	/*
 	 * if (tail_call_cnt > MAX_TAIL_CALL_CNT)
 	 *	goto out;
 	 */
-	EMIT2_off32(0x8B, 0x85, tcc_off);             /* mov eax, dword ptr [rbp - tcc_off] */
+	EMIT2_off32(0x8B, 0x85, -36 - MAX_BPF_STACK); /* mov eax, dword ptr [rbp - 548] */
 	EMIT3(0x83, 0xF8, MAX_TAIL_CALL_CNT);         /* cmp eax, MAX_TAIL_CALL_CNT */
-	EMIT2(X86_JA, off1);                          /* ja out */
+	EMIT2(X86_JA, 14);                            /* ja out */
 	EMIT3(0x83, 0xC0, 0x01);                      /* add eax, 1 */
-	EMIT2_off32(0x89, 0x85, tcc_off);             /* mov dword ptr [rbp - tcc_off], eax */
+	EMIT2_off32(0x89, 0x85, -36 - MAX_BPF_STACK); /* mov dword ptr [rbp -548], eax */
 
-	poke->tailcall_bypass = image + (addr - poke_off - X86_PATCH_SIZE);
-	poke->adj_off = X86_TAIL_CALL_OFFSET;
-	poke->tailcall_target = image + (addr - X86_PATCH_SIZE);
-	poke->bypass_addr = (u8 *)poke->tailcall_target + X86_PATCH_SIZE;
-
-	emit_jump(&prog, (u8 *)poke->tailcall_target + X86_PATCH_SIZE,
-		  poke->tailcall_bypass);
-
-	*pprog = prog;
-	pop_callee_regs(pprog, callee_regs_used);
-	prog = *pprog;
-	EMIT1(0x58);                                  /* pop rax */
-	EMIT3_off32(0x48, 0x81, 0xC4, round_up(stack_depth, 8));
+	poke->ip = image + (addr - X86_PATCH_SIZE);
+	poke->adj_off = PROLOGUE_SIZE;
 
 	memcpy(prog, ideal_nops[NOP_ATOMIC5], X86_PATCH_SIZE);
 	prog += X86_PATCH_SIZE;
@@ -500,6 +484,7 @@ static void emit_bpf_tail_call_direct(struct bpf_jit_poke_descriptor *poke,
 
 static void bpf_tail_call_direct_fixup(struct bpf_prog *prog)
 {
+	static const enum bpf_text_poke_type type = BPF_MOD_NOP_TO_JUMP;
 	struct bpf_jit_poke_descriptor *poke;
 	struct bpf_array *array;
 	struct bpf_prog *target;
@@ -507,10 +492,7 @@ static void bpf_tail_call_direct_fixup(struct bpf_prog *prog)
 
 	for (i = 0; i < prog->aux->size_poke_tab; i++) {
 		poke = &prog->aux->poke_tab[i];
-		if (poke->aux && poke->aux != prog->aux)
-			continue;
-
-		WARN_ON_ONCE(READ_ONCE(poke->tailcall_target_stable));
+		WARN_ON_ONCE(READ_ONCE(poke->ip_stable));
 
 		if (poke->reason != BPF_POKE_REASON_TAIL_CALL)
 			continue;
@@ -521,25 +503,18 @@ static void bpf_tail_call_direct_fixup(struct bpf_prog *prog)
 		if (target) {
 			/* Plain memcpy is used when image is not live yet
 			 * and still not locked as read-only. Once poke
-			 * location is active (poke->tailcall_target_stable),
-			 * any parallel bpf_arch_text_poke() might occur
-			 * still on the read-write image until we finally
-			 * locked it as read-only. Both modifications on
-			 * the given image are under text_mutex to avoid
-			 * interference.
+			 * location is active (poke->ip_stable), any parallel
+			 * bpf_arch_text_poke() might occur still on the
+			 * read-write image until we finally locked it as
+			 * read-only. Both modifications on the given image
+			 * are under text_mutex to avoid interference.
 			 */
-			ret = __bpf_arch_text_poke(poke->tailcall_target,
-						   BPF_MOD_JUMP, NULL,
+			ret = __bpf_arch_text_poke(poke->ip, type, NULL,
 						   (u8 *)target->bpf_func +
 						   poke->adj_off, false);
 			BUG_ON(ret < 0);
-			ret = __bpf_arch_text_poke(poke->tailcall_bypass,
-						   BPF_MOD_JUMP,
-						   (u8 *)poke->tailcall_target +
-						   X86_PATCH_SIZE, NULL, false);
-			BUG_ON(ret < 0);
 		}
-		WRITE_ONCE(poke->tailcall_target_stable, true);
+		WRITE_ONCE(poke->ip_stable, true);
 		mutex_unlock(&array->aux->poke_mutex);
 	}
 }
@@ -703,99 +678,6 @@ static void emit_stx(u8 **pprog, u32 size, u32 dst_reg, u32 src_reg, int off)
 	else
 		EMIT1_off32(add_2reg(0x80, dst_reg, src_reg), off);
 	*pprog = prog;
-}
-
-static int emit_patch(u8 **pprog, void *func, void *ip, u8 opcode)
-{
-	u8 *prog = *pprog;
-	int cnt = 0;
-	s64 offset;
-
-	offset = func - (ip + X86_PATCH_SIZE);
-	if (!is_simm32(offset)) {
-		pr_err("Target call %p is out of range\n", func);
-		return -EINVAL;
-	}
-	EMIT1_off32(opcode, offset);
-	*pprog = prog;
-	return 0;
-}
-
-static int emit_call(u8 **pprog, void *func, void *ip)
-{
-	return emit_patch(pprog, func, ip, 0xE8);
-}
-
-static int emit_jump(u8 **pprog, void *func, void *ip)
-{
-	return emit_patch(pprog, func, ip, 0xE9);
-}
-
-int bpf_arch_text_poke(void *ip, enum bpf_text_poke_type t,
-		       void *old_addr, void *new_addr)
-{
-	int (*emit_patch_fn)(u8 **pprog, void *func, void *ip);
-	u8 old_insn[X86_PATCH_SIZE] = {};
-	u8 new_insn[X86_PATCH_SIZE] = {};
-	u8 *prog;
-	int ret;
-
-	if (!is_kernel_text((long)ip) &&
-	    !is_bpf_text_address((long)ip))
-		/* BPF poking in modules is not supported */
-		return -EINVAL;
-
-	switch (t) {
-	case BPF_MOD_NOP_TO_CALL ... BPF_MOD_CALL_TO_NOP:
-		emit_patch_fn = emit_call;
-		break;
-	case BPF_MOD_NOP_TO_JUMP ... BPF_MOD_JUMP_TO_NOP:
-		emit_patch_fn = emit_jump;
-		break;
-	default:
-		return -ENOTSUPP;
-	}
-
-	if (old_addr) {
-		prog = old_insn;
-		ret = emit_patch_fn(&prog, old_addr, (void *)ip);
-		if (ret)
-			return ret;
-	}
-	if (new_addr) {
-		prog = new_insn;
-		ret = emit_patch_fn(&prog, new_addr, (void *)ip);
-		if (ret)
-			return ret;
-	}
-
-	ret = -EBUSY;
-	mutex_lock(&text_mutex);
-	switch (t) {
-	case BPF_MOD_NOP_TO_CALL:
-	case BPF_MOD_NOP_TO_JUMP:
-		if (memcmp(ip, ideal_nops[NOP_ATOMIC5], X86_PATCH_SIZE))
-			goto out;
-		text_poke_bp(ip, new_insn, X86_PATCH_SIZE, NULL);
-		break;
-	case BPF_MOD_CALL_TO_CALL:
-	case BPF_MOD_JUMP_TO_JUMP:
-		if (memcmp(ip, old_insn, X86_PATCH_SIZE))
-			goto out;
-		text_poke_bp(ip, new_insn, X86_PATCH_SIZE, NULL);
-		break;
-	case BPF_MOD_CALL_TO_NOP:
-	case BPF_MOD_JUMP_TO_NOP:
-		if (memcmp(ip, old_insn, X86_PATCH_SIZE))
-			goto out;
-		text_poke_bp(ip, ideal_nops[NOP_ATOMIC5], X86_PATCH_SIZE,
-			     NULL);
-		break;
-	}
-	ret = 0;
-out:
-	mutex_unlock(&text_mutex);
-	return ret;
 }
 
 static bool ex_handler_bpf(const struct exception_table_entry *x,
@@ -1285,13 +1167,9 @@ xadd:			if (is_imm8(insn->off))
 		case BPF_JMP | BPF_TAIL_CALL:
 			if (imm32)
 				emit_bpf_tail_call_direct(&bpf_prog->aux->poke_tab[imm32 - 1],
-							  &prog, addrs[i], image,
-							  callee_regs_used,
-							  bpf_prog->aux->stack_depth);
+							  &prog, addrs[i], image);
 			else
-				emit_bpf_tail_call_indirect(&prog,
-							    callee_regs_used,
-							    bpf_prog->aux->stack_depth);
+				emit_bpf_tail_call_indirect(&prog);
 			break;
 
 			/* cond jump */
