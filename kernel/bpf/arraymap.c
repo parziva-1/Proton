@@ -695,171 +695,6 @@ static void prog_array_map_seq_show_elem(struct bpf_map *map, void *key,
 	rcu_read_unlock();
 }
 
-struct prog_poke_elem {
-	struct list_head list;
-	struct bpf_prog_aux *aux;
-};
-
-static int prog_array_map_poke_track(struct bpf_map *map,
-				     struct bpf_prog_aux *prog_aux)
-{
-	struct prog_poke_elem *elem;
-	struct bpf_array_aux *aux;
-	int ret = 0;
-
-	aux = container_of(map, struct bpf_array, map)->aux;
-	mutex_lock(&aux->poke_mutex);
-	list_for_each_entry(elem, &aux->poke_progs, list) {
-		if (elem->aux == prog_aux)
-			goto out;
-	}
-
-	elem = kmalloc(sizeof(*elem), GFP_KERNEL);
-	if (!elem) {
-		ret = -ENOMEM;
-		goto out;
-	}
-
-	INIT_LIST_HEAD(&elem->list);
-	/* We must track the program's aux info at this point in time
-	 * since the program pointer itself may not be stable yet, see
-	 * also comment in prog_array_map_poke_run().
-	 */
-	elem->aux = prog_aux;
-
-	list_add_tail(&elem->list, &aux->poke_progs);
-out:
-	mutex_unlock(&aux->poke_mutex);
-	return ret;
-}
-
-static void prog_array_map_poke_untrack(struct bpf_map *map,
-					struct bpf_prog_aux *prog_aux)
-{
-	struct prog_poke_elem *elem, *tmp;
-	struct bpf_array_aux *aux;
-
-	aux = container_of(map, struct bpf_array, map)->aux;
-	mutex_lock(&aux->poke_mutex);
-	list_for_each_entry_safe(elem, tmp, &aux->poke_progs, list) {
-		if (elem->aux == prog_aux) {
-			list_del_init(&elem->list);
-			kfree(elem);
-			break;
-		}
-	}
-	mutex_unlock(&aux->poke_mutex);
-}
-
-static void prog_array_map_poke_run(struct bpf_map *map, u32 key,
-				    struct bpf_prog *old,
-				    struct bpf_prog *new)
-{
-	u8 *old_addr, *new_addr, *old_bypass_addr;
-	struct prog_poke_elem *elem;
-	struct bpf_array_aux *aux;
-
-	aux = container_of(map, struct bpf_array, map)->aux;
-	WARN_ON_ONCE(!mutex_is_locked(&aux->poke_mutex));
-
-	list_for_each_entry(elem, &aux->poke_progs, list) {
-		struct bpf_jit_poke_descriptor *poke;
-		int i, ret;
-
-		for (i = 0; i < elem->aux->size_poke_tab; i++) {
-			poke = &elem->aux->poke_tab[i];
-
-			/* Few things to be aware of:
-			 *
-			 * 1) We can only ever access aux in this context, but
-			 *    not aux->prog since it might not be stable yet and
-			 *    there could be danger of use after free otherwise.
-			 * 2) Initially when we start tracking aux, the program
-			 *    is not JITed yet and also does not have a kallsyms
-			 *    entry. We skip these as poke->tailcall_target_stable
-			 *    is not active yet. The JIT will do the final fixup
-			 *    before setting it stable. The various
-			 *    poke->tailcall_target_stable are successively
-			 *    activated, so tail call updates can arrive from here
-			 *    while JIT is still finishing its final fixup for
-			 *    non-activated poke entries.
-			 * 3) On program teardown, the program's kallsym entry gets
-			 *    removed out of RCU callback, but we can only untrack
-			 *    from sleepable context, therefore bpf_arch_text_poke()
-			 *    might not see that this is in BPF text section and
-			 *    bails out with -EINVAL. As these are unreachable since
-			 *    RCU grace period already passed, we simply skip them.
-			 * 4) Also programs reaching refcount of zero while patching
-			 *    is in progress is okay since we're protected under
-			 *    poke_mutex and untrack the programs before the JIT
-			 *    buffer is freed. When we're still in the middle of
-			 *    patching and suddenly kallsyms entry of the program
-			 *    gets evicted, we just skip the rest which is fine due
-			 *    to point 3).
-			 * 5) Any other error happening below from bpf_arch_text_poke()
-			 *    is a unexpected bug.
-			 */
-			if (!READ_ONCE(poke->tailcall_target_stable))
-				continue;
-			if (poke->reason != BPF_POKE_REASON_TAIL_CALL)
-				continue;
-			if (poke->tail_call.map != map ||
-			    poke->tail_call.key != key)
-				continue;
-
-			old_bypass_addr = old ? NULL : poke->bypass_addr;
-			old_addr = old ? (u8 *)old->bpf_func + poke->adj_off : NULL;
-			new_addr = new ? (u8 *)new->bpf_func + poke->adj_off : NULL;
-
-			if (new) {
-				ret = bpf_arch_text_poke(poke->tailcall_target,
-							 BPF_MOD_JUMP,
-							 old_addr, new_addr);
-				BUG_ON(ret < 0 && ret != -EINVAL);
-				if (!old) {
-					ret = bpf_arch_text_poke(poke->tailcall_bypass,
-								 BPF_MOD_JUMP,
-								 poke->bypass_addr,
-								 NULL);
-					BUG_ON(ret < 0 && ret != -EINVAL);
-				}
-			} else {
-				ret = bpf_arch_text_poke(poke->tailcall_bypass,
-							 BPF_MOD_JUMP,
-							 old_bypass_addr,
-							 poke->bypass_addr);
-				BUG_ON(ret < 0 && ret != -EINVAL);
-				/* let other CPUs finish the execution of program
-				 * so that it will not possible to expose them
-				 * to invalid nop, stack unwind, nop state
-				 */
-				if (!ret)
-					synchronize_rcu();
-				ret = bpf_arch_text_poke(poke->tailcall_target,
-							 BPF_MOD_JUMP,
-							 old_addr, NULL);
-				BUG_ON(ret < 0 && ret != -EINVAL);
-			}
-		}
-	}
-}
-
-static void prog_array_map_clear_deferred(struct work_struct *work)
-{
-	struct bpf_map *map = container_of(work, struct bpf_array_aux,
-					   work)->map;
-	bpf_fd_array_map_clear(map);
-	bpf_map_put(map);
-}
-
-static void prog_array_map_clear(struct bpf_map *map)
-{
-	struct bpf_array_aux *aux = container_of(map, struct bpf_array,
-						 map)->aux;
-	bpf_map_inc(map);
-	schedule_work(&aux->work);
-}
-
 static struct bpf_map *prog_array_map_alloc(union bpf_attr *attr)
 {
 	struct bpf_array_aux *aux;
@@ -869,11 +704,6 @@ static struct bpf_map *prog_array_map_alloc(union bpf_attr *attr)
 	if (!aux)
 		return ERR_PTR(-ENOMEM);
 
-	INIT_WORK(&aux->work, prog_array_map_clear_deferred);
-	INIT_LIST_HEAD(&aux->poke_progs);
-	mutex_init(&aux->poke_mutex);
-	spin_lock_init(&aux->owner.lock);
-
 	map = array_map_alloc(attr);
 	if (IS_ERR(map)) {
 		kfree(aux);
@@ -881,38 +711,22 @@ static struct bpf_map *prog_array_map_alloc(union bpf_attr *attr)
 	}
 
 	container_of(map, struct bpf_array, map)->aux = aux;
-	aux->map = map;
-
 	return map;
 }
 
 static void prog_array_map_free(struct bpf_map *map)
 {
-	struct prog_poke_elem *elem, *tmp;
 	struct bpf_array_aux *aux;
 
 	aux = container_of(map, struct bpf_array, map)->aux;
-	list_for_each_entry_safe(elem, tmp, &aux->poke_progs, list) {
-		list_del_init(&elem->list);
-		kfree(elem);
-	}
 	kfree(aux);
 	fd_array_map_free(map);
 }
 
-/* prog_array->aux->{type,jited} is a runtime binding.
- * Doing static check alone in the verifier is not enough.
- * Thus, prog_array_map cannot be used as an inner_map
- * and map_meta_equal is not implemented.
- */
-static int prog_array_map_btf_id;
 const struct bpf_map_ops prog_array_map_ops = {
 	.map_alloc_check = fd_array_map_alloc_check,
 	.map_alloc = prog_array_map_alloc,
 	.map_free = prog_array_map_free,
-	.map_poke_track = prog_array_map_poke_track,
-	.map_poke_untrack = prog_array_map_poke_untrack,
-	.map_poke_run = prog_array_map_poke_run,
 	.map_get_next_key = array_map_get_next_key,
 	.map_lookup_elem = fd_array_map_lookup_elem,
 	.map_delete_elem = fd_array_map_delete_elem,
