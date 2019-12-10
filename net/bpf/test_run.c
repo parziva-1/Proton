@@ -438,26 +438,18 @@ static int convert___skb_to_skb(struct sk_buff *skb, struct __sk_buff *__skb)
 	/* priority is allowed */
 
 	if (!range_is_zero(__skb, offsetofend(struct __sk_buff, priority),
-			   offsetof(struct __sk_buff, ifindex)))
-		return -EINVAL;
-
-	/* ifindex is allowed */
-
-	if (!range_is_zero(__skb, offsetofend(struct __sk_buff, ifindex),
 			   offsetof(struct __sk_buff, cb)))
 		return -EINVAL;
 
 	/* cb is allowed */
 
-	if (!range_is_zero(__skb, offsetof(struct __sk_buff, cb) +
-			   FIELD_SIZEOF(struct __sk_buff, cb),
+	if (!range_is_zero(__skb, offsetofend(struct __sk_buff, cb),
 			   offsetof(struct __sk_buff, tstamp)))
 		return -EINVAL;
 
 	/* tstamp is allowed */
 
-	if (!range_is_zero(__skb, offsetof(struct __sk_buff, tstamp) +
-			   FIELD_SIZEOF(struct __sk_buff, tstamp),
+	if (!range_is_zero(__skb, offsetofend(struct __sk_buff, tstamp),
 			   sizeof(struct __sk_buff)))
 		return -EINVAL;
 
