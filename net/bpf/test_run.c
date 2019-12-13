@@ -102,10 +102,19 @@ static int bpf_test_run(struct bpf_prog *prog, void *ctx, u32 repeat,
 	if (!repeat)
 		repeat = 1;
 
-	bpf_test_timer_enter(&t);
-	do {
-		ret = bpf_cgroup_storage_set(storage);
-		if (ret)
+	rcu_read_lock();
+	preempt_disable();
+	time_start = ktime_get_ns();
+	for (i = 0; i < repeat; i++) {
+		bpf_cgroup_storage_set(storage);
+
+		if (xdp)
+			*retval = bpf_prog_run_xdp(prog, ctx);
+		else
+			*retval = BPF_PROG_RUN(prog, ctx);
+
+		if (signal_pending(current)) {
+			ret = -EINTR;
 			break;
 
 		if (xdp)
