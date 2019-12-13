@@ -457,8 +457,10 @@ static int convert___skb_to_skb(struct sk_buff *skb, struct __sk_buff *__skb)
 		return -EINVAL;
 
 	/* tstamp is allowed */
+	/* wire_len is allowed */
+	/* gso_segs is allowed */
 
-	if (!range_is_zero(__skb, offsetofend(struct __sk_buff, tstamp),
+	if (!range_is_zero(__skb, offsetofend(struct __sk_buff, gso_segs),
 			   sizeof(struct __sk_buff)))
 		return -EINVAL;
 
@@ -479,7 +481,6 @@ static int convert___skb_to_skb(struct sk_buff *skb, struct __sk_buff *__skb)
 	if (__skb->gso_segs > GSO_MAX_SEGS)
 		return -EINVAL;
 	skb_shinfo(skb)->gso_segs = __skb->gso_segs;
-	skb_shinfo(skb)->gso_size = __skb->gso_size;
 
 	return 0;
 }
