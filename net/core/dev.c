@@ -8700,8 +8700,17 @@ static int dev_xdp_install(struct net_device *dev, enum bpf_xdp_mode mode,
 			   bpf_op_t bpf_op, struct netlink_ext_ack *extack,
 			   u32 flags, struct bpf_prog *prog)
 {
+	bool non_hw = !(flags & XDP_FLAGS_HW_MODE);
+	struct bpf_prog *prev_prog = NULL;
 	struct netdev_bpf xdp;
 	int err;
+
+	if (non_hw) {
+		prev_prog = bpf_prog_by_id(__dev_xdp_query(dev, bpf_op,
+							   XDP_QUERY_PROG));
+		if (IS_ERR(prev_prog))
+			prev_prog = NULL;
+	}
 
 	memset(&xdp, 0, sizeof(xdp));
 	xdp.command = mode == XDP_MODE_HW ? XDP_SETUP_PROG_HW : XDP_SETUP_PROG;
@@ -8709,25 +8718,14 @@ static int dev_xdp_install(struct net_device *dev, enum bpf_xdp_mode mode,
 	xdp.flags = flags;
 	xdp.prog = prog;
 
-	/* Drivers assume refcnt is already incremented (i.e, prog pointer is
-	 * "moved" into driver), so they don't increment it on their own, but
-	 * they do decrement refcnt when program is detached or replaced.
-	 * Given net_device also owns link/prog, we need to bump refcnt here
-	 * to prevent drivers from underflowing it.
-	 */
-	if (prog)
-		bpf_prog_inc(prog);
 	err = bpf_op(dev, &xdp);
-	if (err) {
-		if (prog)
-			bpf_prog_put(prog);
-		return err;
-	}
+	if (!err && non_hw)
+		bpf_prog_change_xdp(prev_prog, prog);
 
-	if (mode != XDP_MODE_HW)
-		bpf_prog_change_xdp(dev_xdp_prog(dev, mode), prog);
+	if (prev_prog)
+		bpf_prog_put(prev_prog);
 
-	return 0;
+	return err;
 }
 
 static void dev_xdp_uninstall(struct net_device *dev)
