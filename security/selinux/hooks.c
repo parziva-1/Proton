@@ -114,7 +114,6 @@ static DEFINE_MUTEX(selinux_sdcardfs_lock);
 
 #ifdef CONFIG_SECURITY_SELINUX_DEVELOP
 static int selinux_enforcing_boot __initdata;
-int selinux_enforcing;
 
 static int __init enforcing_setup(char *str)
 {
@@ -144,14 +143,7 @@ static int __init selinux_enabled_setup(char *str)
 {
 	unsigned long enabled;
 	if (!kstrtoul(str, 0, &enabled))
-	{
-// [ SEC_SELINUX_PORTING_COMMON
-#ifdef CONFIG_SECURITY_SELINUX_ALWAYS_ENFORCE
-			selinux_enabled = 1;
-#else
-			selinux_enabled_boot = enabled ? 1 : 0;
-#endif
-// ] SEC_SELINUX_PORTING_COMMON
+		selinux_enabled_boot = enabled ? 1 : 0;
 	return 1;
 }
 __setup("selinux=", selinux_enabled_setup);
@@ -7468,11 +7460,7 @@ static struct pernet_operations selinux_net_ops = {
 static int __init selinux_nf_ip_init(void)
 {
 	int err;
-// [ SEC_SELINUX_PORTING_COMMON
-#ifdef CONFIG_SECURITY_SELINUX_ALWAYS_ENFORCE
-		selinux_enabled = 1;
-#endif
-// ] SEC_SELINUX_PORTING_COMMON
+
 	if (!selinux_enabled_boot)
 		return 0;
 
@@ -7519,13 +7507,6 @@ int selinux_disable(struct selinux_state *state)
 	selinux_mark_disabled(state);
 
 	pr_info("SELinux:  Disabled at runtime.\n");
-
-	/*
-	 * Unregister netfilter hooks.
-	 * Must be done before security_delete_hooks() to avoid breaking
-	 * runtime disable.
-	 */
-	selinux_nf_ip_exit();
 
 	security_delete_hooks(selinux_hooks, ARRAY_SIZE(selinux_hooks));
 

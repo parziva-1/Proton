@@ -174,12 +174,11 @@ static ssize_t sel_write_enforce(struct file *file, const char __user *buf,
 		if (length)
 			goto out;
 		audit_log(audit_context(), GFP_KERNEL, AUDIT_MAC_STATUS,
-				"enforcing=%d old_enforcing=%d auid=%u ses=%u"
-				" enabled=1 old-enabled=1 lsm=selinux res=1",
+			"enforcing=%d old_enforcing=%d auid=%u ses=%u"
+			" enabled=1 old-enabled=1 lsm=selinux res=1",
 			new_value, old_value,
 			from_kuid(&init_user_ns, audit_get_loginuid(current)),
-			audit_get_sessionid(current),
-			1, 1);
+			audit_get_sessionid(current));
 		enforcing_set(state, new_value);
 		selinux_enforcing = new_value;
 		if (new_value)
@@ -2129,6 +2128,7 @@ static int __init init_sel_fs(void)
 	struct qstr null_name = QSTR_INIT(NULL_FILE_NAME,
 					  sizeof(NULL_FILE_NAME)-1);
 	int err;
+
 	if (!selinux_enabled_boot)
 		return 0;
 
