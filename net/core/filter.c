@@ -3975,16 +3975,33 @@ static const struct bpf_func_proto bpf_xdp_adjust_meta_proto = {
 };
 
 static int __bpf_tx_xdp_map(struct net_device *dev_rx, void *fwd,
-			    struct bpf_map *map, struct xdp_buff *xdp)
+			    struct bpf_map *map,
+			    struct xdp_buff *xdp)
 {
 	switch (map->map_type) {
 	case BPF_MAP_TYPE_DEVMAP:
-	case BPF_MAP_TYPE_DEVMAP_HASH:
-		return dev_map_enqueue(fwd, xdp, dev_rx);
-	case BPF_MAP_TYPE_CPUMAP:
-		return cpu_map_enqueue(fwd, xdp, dev_rx);
-	case BPF_MAP_TYPE_XSKMAP:
-		return __xsk_map_redirect(fwd, xdp);
+	case BPF_MAP_TYPE_DEVMAP_HASH: {
+		struct bpf_dtab_netdev *dst = fwd;
+
+		err = dev_map_enqueue(dst, xdp, dev_rx);
+		if (unlikely(err))
+			return err;
+		break;
+	}
+	case BPF_MAP_TYPE_CPUMAP: {
+		struct bpf_cpu_map_entry *rcpu = fwd;
+
+		err = cpu_map_enqueue(rcpu, xdp, dev_rx);
+		if (unlikely(err))
+			return err;
+		break;
+	}
+	case BPF_MAP_TYPE_XSKMAP: {
+		struct xdp_sock *xs = fwd;
+
+		err = __xsk_map_redirect(xs, xdp);
+		return err;
+	}
 	default:
 		return -EBADRQC;
 	}
@@ -3993,9 +4010,26 @@ static int __bpf_tx_xdp_map(struct net_device *dev_rx, void *fwd,
 
 void xdp_do_flush(void)
 {
-	__dev_flush();
-	__cpu_map_flush();
-	__xsk_map_flush();
+	struct bpf_redirect_info *ri = this_cpu_ptr(&bpf_redirect_info);
+	struct bpf_map *map = ri->map_to_flush;
+
+	ri->map_to_flush = NULL;
+	if (map) {
+		switch (map->map_type) {
+		case BPF_MAP_TYPE_DEVMAP:
+		case BPF_MAP_TYPE_DEVMAP_HASH:
+			__dev_map_flush(map);
+			break;
+		case BPF_MAP_TYPE_CPUMAP:
+			__cpu_map_flush(map);
+			break;
+		case BPF_MAP_TYPE_XSKMAP:
+			__xsk_map_flush();
+			break;
+		default:
+			break;
+		}
+	}
 }
 EXPORT_SYMBOL_GPL(xdp_do_flush);
 
@@ -4057,6 +4091,7 @@ int xdp_do_redirect(struct net_device *dev, struct xdp_buff *xdp,
 		err = __bpf_tx_xdp_map(dev, fwd, map, xdp);
 	}
 
+	err = __bpf_tx_xdp_map(dev, fwd, map, xdp);
 	if (unlikely(err))
 		goto err;
 
