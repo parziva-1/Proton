@@ -77,6 +77,8 @@ struct bpf_cpu_map {
 	struct bpf_cpu_map_entry **cpu_map;
 };
 
+static DEFINE_PER_CPU(struct list_head, cpu_map_flush_list);
+
 static int bq_flush_to_queue(struct xdp_bulk_queue *bq);
 
 static struct bpf_map *cpu_map_alloc(union bpf_attr *attr)
