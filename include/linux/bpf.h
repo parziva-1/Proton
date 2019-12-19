@@ -1156,9 +1156,7 @@ struct sk_buff;
 
 struct bpf_dtab_netdev *__dev_map_lookup_elem(struct bpf_map *map, u32 key);
 struct bpf_dtab_netdev *__dev_map_hash_lookup_elem(struct bpf_map *map, u32 key);
-void __dev_flush(void);
-int dev_xdp_enqueue(struct net_device *dev, struct xdp_buff *xdp,
-		    struct net_device *dev_rx);
+void __dev_map_flush(void);
 int dev_map_enqueue(struct bpf_dtab_netdev *dst, struct xdp_buff *xdp,
 		    struct net_device *dev_rx);
 int dev_map_generic_redirect(struct bpf_dtab_netdev *dst, struct sk_buff *skb,
@@ -1310,7 +1308,7 @@ static inline bool dev_map_can_have_prog(struct bpf_map *map)
 	return false;
 }
 
-static inline void __dev_flush(void)
+static inline void __dev_map_flush(void)
 {
 }
 

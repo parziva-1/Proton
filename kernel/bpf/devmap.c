@@ -82,7 +82,7 @@ struct bpf_dtab {
 	u32 n_buckets;
 };
 
-static DEFINE_PER_CPU(struct list_head, dev_flush_list);
+static DEFINE_PER_CPU(struct list_head, dev_map_flush_list);
 static DEFINE_SPINLOCK(dev_map_lock);
 static LIST_HEAD(dev_map_list);
 
@@ -108,7 +108,6 @@ static inline struct hlist_head *dev_map_index_hash(struct bpf_dtab *dtab,
 
 static int dev_map_init_map(struct bpf_dtab *dtab, union bpf_attr *attr)
 {
-	u32 valsize = attr->value_size;
 	u64 cost = 0;
 	int err;
 
@@ -396,10 +395,10 @@ error:
  * are also complete. Using synchronize_rcu or call_rcu will suffice for this
  * because both wait for napi context to exit.
  */
-void __dev_flush(void)
+void __dev_map_flush(void)
 {
-	struct list_head *flush_list = this_cpu_ptr(&dev_flush_list);
-	struct xdp_dev_bulk_queue *bq, *tmp;
+	struct list_head *flush_list = this_cpu_ptr(&dev_map_flush_list);
+	struct xdp_bulk_queue *bq, *tmp;
 
 	list_for_each_entry_safe(bq, tmp, flush_list, flush_node)
 		bq_xmit_all(bq, XDP_XMIT_FLUSH);
@@ -427,8 +426,8 @@ struct bpf_dtab_netdev *__dev_map_lookup_elem(struct bpf_map *map, u32 key)
 static void bq_enqueue(struct net_device *dev, struct xdp_frame *xdpf,
 		       struct net_device *dev_rx)
 {
-	struct list_head *flush_list = this_cpu_ptr(&dev_flush_list);
-	struct xdp_dev_bulk_queue *bq = this_cpu_ptr(dev->xdp_bulkq);
+	struct list_head *flush_list = this_cpu_ptr(&dev_map_flush_list);
+	struct xdp_bulk_queue *bq = this_cpu_ptr(obj->bulkq);
 
 	if (unlikely(bq->count == DEV_MAP_BULK_SIZE))
 		bq_xmit_all(bq, 0);
@@ -872,7 +871,7 @@ static int __init dev_map_init(void)
 	register_netdevice_notifier(&dev_map_notifier);
 
 	for_each_possible_cpu(cpu)
-		INIT_LIST_HEAD(&per_cpu(dev_flush_list, cpu));
+		INIT_LIST_HEAD(&per_cpu(dev_map_flush_list, cpu));
 	return 0;
 }
 
