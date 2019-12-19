@@ -439,8 +439,9 @@ int __cgroup_bpf_attach(struct cgroup *cgrp,
 	struct list_head *progs = &cgrp->bpf.progs[type];
 	struct bpf_prog *old_prog = NULL;
 	struct bpf_cgroup_storage *storage[MAX_BPF_CGROUP_STORAGE_TYPE] = {};
-	struct bpf_cgroup_storage *new_storage[MAX_BPF_CGROUP_STORAGE_TYPE] = {};
-	struct bpf_prog_list *pl;
+	struct bpf_cgroup_storage *old_storage[MAX_BPF_CGROUP_STORAGE_TYPE] = {};
+	struct bpf_prog_list *pl, *replace_pl = NULL;
+	enum bpf_cgroup_storage_type stype;
 	int err;
 
 	if (((flags & BPF_F_ALLOW_OVERRIDE) && (flags & BPF_F_ALLOW_MULTI)) ||
@@ -467,17 +468,33 @@ int __cgroup_bpf_attach(struct cgroup *cgrp,
 	if (prog_list_length(progs) >= BPF_CGROUP_MAX_PROGS)
 		return -E2BIG;
 
-	pl = find_attach_entry(progs, prog, link, replace_prog,
-			       flags & BPF_F_ALLOW_MULTI);
-	if (IS_ERR(pl))
-		return PTR_ERR(pl);
+	if (flags & BPF_F_ALLOW_MULTI) {
+		list_for_each_entry(pl, progs, node) {
+			if (pl->prog == prog)
+				/* disallow attaching the same prog twice */
+				return -EINVAL;
+		}
+	} else if (!list_empty(progs)) {
+		replace_pl = list_first_entry(progs, typeof(*pl), node);
+	}
 
-	if (bpf_cgroup_storages_alloc(storage, new_storage, type,
-				      prog ? : link->link.prog, cgrp))
-		return -ENOMEM;
+	for_each_cgroup_storage_type(stype) {
+		storage[stype] = bpf_cgroup_storage_alloc(prog, stype);
+		if (IS_ERR(storage[stype])) {
+			storage[stype] = NULL;
+			for_each_cgroup_storage_type(stype)
+				bpf_cgroup_storage_free(storage[stype]);
+			return -ENOMEM;
+		}
+	}
 
-	if (pl) {
+	if (replace_pl) {
+		pl = replace_pl;
 		old_prog = pl->prog;
+		for_each_cgroup_storage_type(stype) {
+			old_storage[stype] = pl->storage[stype];
+			bpf_cgroup_storage_unlink(old_storage[stype]);
+		}
 	} else {
 		pl = kmalloc(sizeof(*pl), GFP_KERNEL);
 		if (!pl) {
@@ -488,9 +505,10 @@ int __cgroup_bpf_attach(struct cgroup *cgrp,
 	}
 
 	pl->prog = prog;
-	pl->link = link;
-	bpf_cgroup_storages_assign(pl->storage, storage);
-	cgrp->bpf.flags[type] = saved_flags;
+	for_each_cgroup_storage_type(stype)
+		pl->storage[stype] = storage[stype];
+
+	cgrp->bpf.flags[type] = flags;
 
 	err = update_effective_progs(cgrp, type);
 	if (err)
@@ -508,8 +526,7 @@ cleanup:
 		pl->prog = old_prog;
 		pl->link = NULL;
 	}
-	bpf_cgroup_storages_free(new_storage);
-	if (!old_prog) {
+	if (!replace_pl) {
 		list_del(&pl->node);
 		kfree(pl);
 	}
