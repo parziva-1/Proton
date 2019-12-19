@@ -4010,26 +4010,9 @@ static int __bpf_tx_xdp_map(struct net_device *dev_rx, void *fwd,
 
 void xdp_do_flush(void)
 {
-	struct bpf_redirect_info *ri = this_cpu_ptr(&bpf_redirect_info);
-	struct bpf_map *map = ri->map_to_flush;
-
-	ri->map_to_flush = NULL;
-	if (map) {
-		switch (map->map_type) {
-		case BPF_MAP_TYPE_DEVMAP:
-		case BPF_MAP_TYPE_DEVMAP_HASH:
-			__dev_map_flush();
-			break;
-		case BPF_MAP_TYPE_CPUMAP:
-			__cpu_map_flush();
-			break;
-		case BPF_MAP_TYPE_XSKMAP:
-			__xsk_map_flush();
-			break;
-		default:
-			break;
-		}
-	}
+	__dev_map_flush();
+	__cpu_map_flush();
+	__xsk_map_flush();
 }
 EXPORT_SYMBOL_GPL(xdp_do_flush);
 
@@ -4078,18 +4061,6 @@ int xdp_do_redirect(struct net_device *dev, struct xdp_buff *xdp,
 	ri->tgt_index = 0;
 	ri->tgt_value = NULL;
 	WRITE_ONCE(ri->map, NULL);
-
-	if (unlikely(!map)) {
-		fwd = dev_get_by_index_rcu(dev_net(dev), index);
-		if (unlikely(!fwd)) {
-			err = -EINVAL;
-			goto err;
-		}
-
-		err = dev_xdp_enqueue(fwd, xdp, dev);
-	} else {
-		err = __bpf_tx_xdp_map(dev, fwd, map, xdp);
-	}
 
 	err = __bpf_tx_xdp_map(dev, fwd, map, xdp);
 	if (unlikely(err))
