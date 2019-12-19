@@ -77,7 +77,7 @@ struct bpf_cpu_map {
 	struct bpf_cpu_map_entry **cpu_map;
 };
 
-static DEFINE_PER_CPU(struct list_head, cpu_map_flush_list);
+static int bq_flush_to_queue(struct xdp_bulk_queue *bq);
 
 static struct bpf_map *cpu_map_alloc(union bpf_attr *attr)
 {
@@ -657,7 +657,7 @@ const struct bpf_map_ops cpu_map_ops = {
 	.map_btf_id		= &cpu_map_btf_id,
 };
 
-static void bq_flush_to_queue(struct xdp_bulk_queue *bq)
+static int bq_flush_to_queue(struct xdp_bulk_queue *bq)
 {
 	struct bpf_cpu_map_entry *rcpu = bq->obj;
 	unsigned int processed = 0, drops = 0;
