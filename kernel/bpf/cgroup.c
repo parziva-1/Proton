@@ -422,7 +422,6 @@ static struct bpf_prog_list *find_attach_entry(struct list_head *progs,
  *                         propagate the change to descendants
  * @cgrp: The cgroup which descendants to traverse
  * @prog: A program to attach
- * @link: A link to attach
  * @replace_prog: Previously attached program to replace if BPF_F_REPLACE is set
  * @type: Type of attach operation
  * @flags: Option flags
@@ -430,9 +429,8 @@ static struct bpf_prog_list *find_attach_entry(struct list_head *progs,
  * Exactly one of @prog or @link can be non-null.
  * Must be called with cgroup_mutex held.
  */
-int __cgroup_bpf_attach(struct cgroup *cgrp,
-			struct bpf_prog *prog, struct bpf_prog *replace_prog,
-			struct bpf_cgroup_link *link,
+int __cgroup_bpf_attach(struct cgroup *cgrp, struct bpf_prog *prog,
+			struct bpf_prog *replace_prog,
 			enum bpf_attach_type type, u32 flags)
 {
 	u32 saved_flags = (flags & (BPF_F_ALLOW_OVERRIDE | BPF_F_ALLOW_MULTI));
@@ -473,7 +471,12 @@ int __cgroup_bpf_attach(struct cgroup *cgrp,
 			if (pl->prog == prog)
 				/* disallow attaching the same prog twice */
 				return -EINVAL;
+			if (pl->prog == replace_prog)
+				replace_pl = pl;
 		}
+		if ((flags & BPF_F_REPLACE) && !replace_pl)
+			/* prog to replace not found for cgroup */
+			return -ENOENT;
 	} else if (!list_empty(progs)) {
 		replace_pl = list_first_entry(progs, typeof(*pl), node);
 	}
@@ -508,7 +511,7 @@ int __cgroup_bpf_attach(struct cgroup *cgrp,
 	for_each_cgroup_storage_type(stype)
 		pl->storage[stype] = storage[stype];
 
-	cgrp->bpf.flags[type] = flags;
+	cgrp->bpf.flags[type] = saved_flags;
 
 	err = update_effective_progs(cgrp, type);
 	if (err)
@@ -848,8 +851,8 @@ int cgroup_bpf_prog_attach(const union bpf_attr *attr,
 		}
 	}
 
-	ret = cgroup_bpf_attach(cgrp, prog, replace_prog, NULL,
-				attr->attach_type, attr->attach_flags);
+	ret = cgroup_bpf_attach(cgrp, prog, replace_prog, attr->attach_type,
+				attr->attach_flags);
 
 	if (replace_prog)
 		bpf_prog_put(replace_prog);
