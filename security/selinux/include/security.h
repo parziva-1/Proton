@@ -131,33 +131,22 @@ static inline void selinux_mark_initialized(struct selinux_state *state)
 	smp_store_release(&state->initialized, true);
 }
 
+#ifdef CONFIG_SECURITY_SELINUX_DEVELOP
 static inline bool enforcing_enabled(struct selinux_state *state)
 {
-#ifdef CONFIG_SECURITY_SELINUX_DEVELOP
-#if defined(CONFIG_SECURITY_SELINUX_ALWAYS_ENFORCE)
-	return true;
-#elif defined(CONFIG_SECURITY_SELINUX_ALWAYS_PERMISSIVE)
-	return false;
-#else
 	return READ_ONCE(state->enforcing);
-#endif
-#else
-	return true;
-#endif
 }
 
 static inline void enforcing_set(struct selinux_state *state, bool value)
 {
-#ifdef CONFIG_SECURITY_SELINUX_DEVELOP
-#if defined(CONFIG_SECURITY_SELINUX_ALWAYS_ENFORCE)
-	WRITE_ONCE(state->enforcing, true);
-#elif defined(CONFIG_SECURITY_SELINUX_ALWAYS_PERMISSIVE)
-	WRITE_ONCE(state->enforcing, false);
-#else
 	WRITE_ONCE(state->enforcing, value);
-#endif
-#endif
 }
+#else
+static inline bool selinux_disabled(struct selinux_state *state)
+{
+	return false;
+}
+#endif
 
 #ifdef CONFIG_SECURITY_SELINUX_DISABLE
 static inline bool selinux_disabled(struct selinux_state *state)
