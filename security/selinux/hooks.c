@@ -7038,9 +7038,6 @@ static int selinux_perf_event_write(struct perf_event *event)
 }
 #endif
 
-#ifdef CONFIG_KDP_CRED
-static struct security_hook_list selinux_hooks[] __lsm_ro_after_init_kdp = {
-#else
 /*
  * IMPORTANT NOTE: When adding new hooks, please be careful to keep this order:
  * 1. any hooks that don't belong to (2.) or (3.) below,
@@ -7507,6 +7504,13 @@ int selinux_disable(struct selinux_state *state)
 	selinux_mark_disabled(state);
 
 	pr_info("SELinux:  Disabled at runtime.\n");
+
+	/*
+	 * Unregister netfilter hooks.
+	 * Must be done before security_delete_hooks() to avoid breaking
+	 * runtime disable.
+	 */
+	selinux_nf_ip_exit();
 
 	security_delete_hooks(selinux_hooks, ARRAY_SIZE(selinux_hooks));
 
