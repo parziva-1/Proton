@@ -1855,29 +1855,15 @@ bpf_prog_load_check_attach(enum bpf_prog_type prog_type,
 
 		switch (prog_type) {
 		case BPF_PROG_TYPE_TRACING:
-		case BPF_PROG_TYPE_LSM:
 		case BPF_PROG_TYPE_STRUCT_OPS:
-		case BPF_PROG_TYPE_EXT:
 			break;
 		default:
 			return -EINVAL;
 		}
 	}
 
-	if (prog_fd && prog_type != BPF_PROG_TYPE_TRACING &&
-	    prog_type != BPF_PROG_TYPE_EXT)
+	if (prog_fd && prog_type != BPF_PROG_TYPE_TRACING)
 		return -EINVAL;
-
-	switch (prog_type) {
-	case BPF_PROG_TYPE_TRACING:
-		if (btf_id > BTF_MAX_TYPE)
-			return -EINVAL;
-		break;
-	default:
-		if (btf_id || prog_fd)
-			return -EINVAL;
-		break;
-	}
 
 	switch (prog_type) {
 	case BPF_PROG_TYPE_CGROUP_SOCK:

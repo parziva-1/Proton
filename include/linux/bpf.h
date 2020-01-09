@@ -384,7 +384,6 @@ struct bpf_verifier_ops {
 				 const struct btf_type *t, int off, int size,
 				 enum bpf_access_type atype,
 				 u32 *next_btf_id);
-	ANDROID_KABI_RESERVE(1);
 };
 
 struct bpf_prog_offload_ops {
@@ -706,6 +705,32 @@ struct bpf_array_aux {
 	struct mutex poke_mutex;
 	struct work_struct work;
 };
+
+struct btf_type;
+struct btf_member;
+
+#define BPF_STRUCT_OPS_MAX_NR_MEMBERS 64
+struct bpf_struct_ops {
+	const struct bpf_verifier_ops *verifier_ops;
+	int (*init)(struct btf *btf);
+	int (*check_member)(const struct btf_type *t,
+			    const struct btf_member *member);
+	const struct btf_type *type;
+	const char *name;
+	struct btf_func_model func_models[BPF_STRUCT_OPS_MAX_NR_MEMBERS];
+	u32 type_id;
+};
+
+#if defined(CONFIG_BPF_JIT) && defined(CONFIG_BPF_SYSCALL)
+const struct bpf_struct_ops *bpf_struct_ops_find(u32 type_id);
+void bpf_struct_ops_init(struct btf *btf);
+#else
+static inline const struct bpf_struct_ops *bpf_struct_ops_find(u32 type_id)
+{
+	return NULL;
+}
+static inline void bpf_struct_ops_init(struct btf *btf) { }
+#endif
 
 struct bpf_array {
 	struct bpf_map map;

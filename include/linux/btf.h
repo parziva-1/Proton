@@ -98,18 +98,10 @@ const struct btf_type *btf_type_resolve_ptr(const struct btf *btf,
 					    u32 id, u32 *res_id);
 const struct btf_type *btf_type_resolve_func_ptr(const struct btf *btf,
 						 u32 id, u32 *res_id);
-const struct btf_type *
-btf_resolve_size(const struct btf *btf, const struct btf_type *type,
-		 u32 *type_size);
 
 #define for_each_member(i, struct_type, member)			\
 	for (i = 0, member = btf_type_member(struct_type);	\
 	     i < btf_type_vlen(struct_type);			\
-	     i++, member++)
-
-#define for_each_vsi(i, datasec_type, member)			\
-	for (i = 0, member = btf_type_var_secinfo(datasec_type);	\
-	     i < btf_type_vlen(datasec_type);			\
 	     i++, member++)
 
 static inline bool btf_type_is_ptr(const struct btf_type *t)
@@ -120,11 +112,6 @@ static inline bool btf_type_is_ptr(const struct btf_type *t)
 static inline bool btf_type_is_int(const struct btf_type *t)
 {
 	return BTF_INFO_KIND(t->info) == BTF_KIND_INT;
-}
-
-static inline bool btf_type_is_small_int(const struct btf_type *t)
-{
-	return btf_type_is_int(t) && t->size <= sizeof(u64);
 }
 
 static inline bool btf_type_is_enum(const struct btf_type *t)
@@ -147,27 +134,7 @@ static inline bool btf_type_is_func_proto(const struct btf_type *t)
 	return BTF_INFO_KIND(t->info) == BTF_KIND_FUNC_PROTO;
 }
 
-static inline bool btf_type_is_var(const struct btf_type *t)
-{
-	return BTF_INFO_KIND(t->info) == BTF_KIND_VAR;
-}
-
-/* union is only a special case of struct:
- * all its offsetof(member) == 0
- */
-static inline bool btf_type_is_struct(const struct btf_type *t)
-{
-	u8 kind = BTF_INFO_KIND(t->info);
-
-	return kind == BTF_KIND_STRUCT || kind == BTF_KIND_UNION;
-}
-
 static inline u16 btf_type_vlen(const struct btf_type *t)
-{
-	return BTF_INFO_VLEN(t->info);
-}
-
-static inline u16 btf_func_linkage(const struct btf_type *t)
 {
 	return BTF_INFO_VLEN(t->info);
 }
@@ -175,13 +142,6 @@ static inline u16 btf_func_linkage(const struct btf_type *t)
 static inline bool btf_type_kflag(const struct btf_type *t)
 {
 	return BTF_INFO_KFLAG(t->info);
-}
-
-static inline u32 btf_member_bit_offset(const struct btf_type *struct_type,
-					const struct btf_member *member)
-{
-	return btf_type_kflag(struct_type) ? BTF_MEMBER_BIT_OFFSET(member->offset)
-					   : member->offset;
 }
 
 static inline u32 btf_member_bitfield_size(const struct btf_type *struct_type,
@@ -194,42 +154,6 @@ static inline u32 btf_member_bitfield_size(const struct btf_type *struct_type,
 static inline const struct btf_member *btf_type_member(const struct btf_type *t)
 {
 	return (const struct btf_member *)(t + 1);
-}
-
-static inline const struct btf_var_secinfo *btf_type_var_secinfo(
-		const struct btf_type *t)
-{
-	return (const struct btf_var_secinfo *)(t + 1);
-}
-
-static inline bool btf_type_is_ptr(const struct btf_type *t)
-{
-	return BTF_INFO_KIND(t->info) == BTF_KIND_PTR;
-}
-
-static inline bool btf_type_is_int(const struct btf_type *t)
-{
-	return BTF_INFO_KIND(t->info) == BTF_KIND_INT;
-}
-
-static inline bool btf_type_is_enum(const struct btf_type *t)
-{
-	return BTF_INFO_KIND(t->info) == BTF_KIND_ENUM;
-}
-
-static inline bool btf_type_is_typedef(const struct btf_type *t)
-{
-	return BTF_INFO_KIND(t->info) == BTF_KIND_TYPEDEF;
-}
-
-static inline bool btf_type_is_func(const struct btf_type *t)
-{
-	return BTF_INFO_KIND(t->info) == BTF_KIND_FUNC;
-}
-
-static inline bool btf_type_is_func_proto(const struct btf_type *t)
-{
-	return BTF_INFO_KIND(t->info) == BTF_KIND_FUNC_PROTO;
 }
 
 #ifdef CONFIG_BPF_SYSCALL

@@ -575,6 +575,13 @@ static const char *btf_int_encoding_str(u8 encoding)
 		return "UNKN";
 }
 
+static u32 btf_member_bit_offset(const struct btf_type *struct_type,
+			     const struct btf_member *member)
+{
+	return btf_type_kflag(struct_type) ? BTF_MEMBER_BIT_OFFSET(member->offset)
+					   : member->offset;
+}
+
 static u32 btf_type_int(const struct btf_type *t)
 {
 	return *(u32 *)(t + 1);
@@ -4340,6 +4347,8 @@ struct btf *btf_parse_vmlinux(void)
 		err = -ENOENT;
 		goto errout;
 	}
+
+	bpf_struct_ops_init(btf);
 
 	btf_verifier_env_free(env);
 	refcount_set(&btf->refcnt, 1);
