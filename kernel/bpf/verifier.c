@@ -10532,23 +10532,6 @@ static int check_map_prog_compatibility(struct bpf_verifier_env *env,
 		return -EINVAL;
 	}
 
-	if (prog->aux->sleepable)
-		switch (map->map_type) {
-		case BPF_MAP_TYPE_HASH:
-		case BPF_MAP_TYPE_LRU_HASH:
-		case BPF_MAP_TYPE_ARRAY:
-			if (!is_preallocated_map(map)) {
-				verbose(env,
-					"Sleepable programs can only use preallocated hash maps\n");
-				return -EINVAL;
-			}
-			break;
-		default:
-			verbose(env,
-				"Sleepable programs can only use array and hash maps\n");
-			return -EINVAL;
-		}
-
 	return 0;
 }
 

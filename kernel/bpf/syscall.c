@@ -887,6 +887,9 @@ static int map_lookup_elem(union bpf_attr *attr)
 	} else if (map->map_type == BPF_MAP_TYPE_QUEUE ||
 		   map->map_type == BPF_MAP_TYPE_STACK) {
 		err = map->ops->map_peek_elem(map, value);
+	} else if (map->map_type == BPF_MAP_TYPE_STRUCT_OPS) {
+		/* struct_ops map requires directly updating "value" */
+		err = bpf_struct_ops_map_sys_lookup_elem(map, key, value);
 	} else {
 		rcu_read_lock();
 		if (map->ops->map_lookup_elem_sys_only)
@@ -993,7 +996,8 @@ static int map_update_elem(union bpf_attr *attr)
 		goto out;
 	} else if (map->map_type == BPF_MAP_TYPE_CPUMAP ||
 		   map->map_type == BPF_MAP_TYPE_SOCKHASH ||
-		   map->map_type == BPF_MAP_TYPE_SOCKMAP) {
+		   map->map_type == BPF_MAP_TYPE_SOCKMAP ||
+		   map->map_type == BPF_MAP_TYPE_STRUCT_OPS) {
 		err = map->ops->map_update_elem(map, key, value, attr->flags);
 		goto out;
 	} else if (IS_FD_PROG_ARRAY(map)) {
@@ -1045,7 +1049,9 @@ static int map_delete_elem(union bpf_attr *attr)
 	if (bpf_map_is_dev_bound(map)) {
 		err = bpf_map_offload_delete_elem(map, key);
 		goto out;
-	} else if (IS_FD_PROG_ARRAY(map)) {
+	} else if (IS_FD_PROG_ARRAY(map) ||
+		   map->map_type == BPF_MAP_TYPE_STRUCT_OPS) {
+		/* These maps require sleepable context */
 		err = map->ops->map_delete_elem(map, key);
 		goto out;
 	}
