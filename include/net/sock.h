@@ -471,7 +471,10 @@ struct sock {
 				sk_kern_sock : 1,
 				sk_no_check_tx : 1,
 				sk_no_check_rx : 1,
-				sk_userlocks : 4;
+				sk_userlocks : 4,
+				sk_protocol  : 8,
+				sk_type      : 16;
+	u16			sk_gso_max_segs;
 	u8			sk_pacing_shift;
 	u16			sk_type;
 	u16			sk_protocol;
