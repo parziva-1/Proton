@@ -346,7 +346,7 @@ struct bpf_insn_aux_data {
 	};
 	u64 map_key_state; /* constant (32 bit) key tracking for maps */
 	int ctx_field_size; /* the ctx field size for load insn, maybe 0 */
-	u32 seen; /* this insn was processed by the verifier at env->pass_cnt */
+	u32 seen; /* this insn was processed by the verifier */
 	bool sanitize_stack_spill; /* subject to Spectre v4 sanitation */
 	bool zext_dst; /* this insn zero extends dst reg */
 	u8 alu_state; /* used in combination with alu_limit */
@@ -491,18 +491,5 @@ bpf_prog_offload_remove_insns(struct bpf_verifier_env *env, u32 off, u32 cnt);
 
 int check_ctx_reg(struct bpf_verifier_env *env,
 		  const struct bpf_reg_state *reg, int regno);
-
-/* this lives here instead of in bpf.h because it needs to dereference tgt_prog */
-static inline u64 bpf_trampoline_compute_key(const struct bpf_prog *tgt_prog,
-					     u32 btf_id)
-{
-        return tgt_prog ? (((u64)tgt_prog->aux->id) << 32 | btf_id) : btf_id;
-}
-
-int bpf_check_attach_target(struct bpf_verifier_log *log,
-			    const struct bpf_prog *prog,
-			    const struct bpf_prog *tgt_prog,
-			    u32 btf_id,
-			    struct bpf_attach_target_info *tgt_info);
 
 #endif /* _LINUX_BPF_VERIFIER_H */

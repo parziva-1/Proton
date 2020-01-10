@@ -5224,9 +5224,8 @@ static int check_func_call(struct bpf_verifier_env *env, struct bpf_insn *insn,
 					subprog);
 			clear_caller_saved_regs(env, caller->regs);
 
-			/* All global functions return a 64-bit SCALAR_VALUE */
+			/* All global functions return SCALAR_VALUE */
 			mark_reg_unknown(env, caller->regs, BPF_REG_0);
-			caller->regs[BPF_REG_0].subreg_def = DEF_NOT_SUBREG;
 
 			/* continue with next insn after call */
 			return 0;
@@ -5263,9 +5262,6 @@ static int check_func_call(struct bpf_verifier_env *env, struct bpf_insn *insn,
 
 	/* only increment it after check_reg_arg() finished */
 	state->curframe++;
-
-	if (btf_check_func_arg_match(env, subprog))
-		return -EINVAL;
 
 	/* and go analyze first insn of the callee */
 	*insn_idx = target_insn;
@@ -9033,6 +9029,7 @@ static int check_btf_func(struct bpf_verifier_env *env,
 			verbose(env, "tail_call is only allowed in functions that return 'int'.\n");
 			goto err_free;
 		}
+		info_aux[i].linkage = BTF_INFO_VLEN(type->info);
 		prev_offset = krecord[i].insn_off;
 		urecord += urec_size;
 	}
@@ -10018,35 +10015,12 @@ static bool reg_type_mismatch(enum bpf_reg_type src, enum bpf_reg_type prev)
 
 static int do_check(struct bpf_verifier_env *env)
 {
-	bool pop_log = !(env->log.level & BPF_LOG_LEVEL2);
 	struct bpf_verifier_state *state = env->cur_state;
 	struct bpf_insn *insns = env->prog->insnsi;
 	struct bpf_reg_state *regs;
 	int insn_cnt = env->prog->len;
 	bool do_print_state = false;
 	int prev_insn_idx = -1;
-
-	env->prev_linfo = NULL;
-
-	state = kzalloc(sizeof(struct bpf_verifier_state), GFP_KERNEL);
-	if (!state)
-		return -ENOMEM;
-	state->curframe = 0;
-	state->speculative = false;
-	state->branches = 1;
-	state->frame[0] = kzalloc(sizeof(struct bpf_func_state), GFP_KERNEL);
-	if (!state->frame[0]) {
-		kfree(state);
-		return -ENOMEM;
-	}
-	env->cur_state = state;
-	init_func_state(env, state->frame[0],
-			BPF_MAIN_FUNC /* callsite */,
-			0 /* frameno */,
-			0 /* subprogno, zero == main subprog */);
-
-	if (btf_check_func_arg_match(env, 0))
-		return -EINVAL;
 
 	for (;;) {
 		struct bpf_insn *insn;
@@ -10358,93 +10332,6 @@ process_bpf_exit:
 		env->insn_idx++;
 	}
 
-	return 0;
-}
-
-/* replace pseudo btf_id with kernel symbol address */
-static int check_pseudo_btf_id(struct bpf_verifier_env *env,
-			       struct bpf_insn *insn,
-			       struct bpf_insn_aux_data *aux)
-{
-	const struct btf_var_secinfo *vsi;
-	const struct btf_type *datasec;
-	const struct btf_type *t;
-	const char *sym_name;
-	bool percpu = false;
-	u32 type, id = insn->imm;
-	s32 datasec_id;
-	u64 addr;
-	int i;
-
-	if (!btf_vmlinux) {
-		verbose(env, "kernel is missing BTF, make sure CONFIG_DEBUG_INFO_BTF=y is specified in Kconfig.\n");
-		return -EINVAL;
-	}
-
-	if (insn[1].imm != 0) {
-		verbose(env, "reserved field (insn[1].imm) is used in pseudo_btf_id ldimm64 insn.\n");
-		return -EINVAL;
-	}
-
-	t = btf_type_by_id(btf_vmlinux, id);
-	if (!t) {
-		verbose(env, "ldimm64 insn specifies invalid btf_id %d.\n", id);
-		return -ENOENT;
-	}
-
-	if (!btf_type_is_var(t)) {
-		verbose(env, "pseudo btf_id %d in ldimm64 isn't KIND_VAR.\n",
-			id);
-		return -EINVAL;
-	}
-
-	sym_name = btf_name_by_offset(btf_vmlinux, t->name_off);
-	addr = kallsyms_lookup_name(sym_name);
-	if (!addr) {
-		verbose(env, "ldimm64 failed to find the address for kernel symbol '%s'.\n",
-			sym_name);
-		return -ENOENT;
-	}
-
-	datasec_id = btf_find_by_name_kind(btf_vmlinux, ".data..percpu",
-					   BTF_KIND_DATASEC);
-	if (datasec_id > 0) {
-		datasec = btf_type_by_id(btf_vmlinux, datasec_id);
-		for_each_vsi(i, datasec, vsi) {
-			if (vsi->type == id) {
-				percpu = true;
-				break;
-			}
-		}
-	}
-
-	insn[0].imm = (u32)addr;
-	insn[1].imm = addr >> 32;
-
-	type = t->type;
-	t = btf_type_skip_modifiers(btf_vmlinux, type, NULL);
-	if (percpu) {
-		aux->btf_var.reg_type = PTR_TO_PERCPU_BTF_ID;
-		aux->btf_var.btf_id = type;
-	} else if (!btf_type_is_struct(t)) {
-		const struct btf_type *ret;
-		const char *tname;
-		u32 tsize;
-
-		/* resolve the type size of ksym. */
-		ret = btf_resolve_size(btf_vmlinux, t, &tsize);
-		if (IS_ERR(ret)) {
-			tname = btf_name_by_offset(btf_vmlinux, t->name_off);
-			verbose(env, "ldimm64 unable to resolve the size of type '%s': %ld\n",
-				tname, PTR_ERR(ret));
-			return -EINVAL;
-		}
-		aux->btf_var.reg_type = PTR_TO_MEM;
-		aux->btf_var.mem_size = tsize;
-	} else {
-		aux->btf_var.reg_type = PTR_TO_BTF_ID;
-		aux->btf_var.btf_id = type;
-	}
 	return 0;
 }
 
@@ -11984,9 +11871,36 @@ static void free_states(struct bpf_verifier_env *env)
 	}
 }
 
+/* The verifier is using insn_aux_data[] to store temporary data during
+ * verification and to store information for passes that run after the
+ * verification like dead code sanitization. do_check_common() for subprogram N
+ * may analyze many other subprograms. sanitize_insn_aux_data() clears all
+ * temporary data after do_check_common() finds that subprogram N cannot be
+ * verified independently. pass_cnt counts the number of times
+ * do_check_common() was run and insn->aux->seen tells the pass number
+ * insn_aux_data was touched. These variables are compared to clear temporary
+ * data from failed pass. For testing and experiments do_check_common() can be
+ * run multiple times even when prior attempt to verify is unsuccessful.
+ */
+static void sanitize_insn_aux_data(struct bpf_verifier_env *env)
+{
+	struct bpf_insn *insn = env->prog->insnsi;
+	struct bpf_insn_aux_data *aux;
+	int i, class;
+
+	for (i = 0; i < env->prog->len; i++) {
+		class = BPF_CLASS(insn[i].code);
+		if (class != BPF_LDX && class != BPF_STX)
+			continue;
+		aux = &env->insn_aux_data[i];
+		if (aux->seen != env->pass_cnt)
+			continue;
+		memset(aux, 0, offsetof(typeof(*aux), orig_idx));
+	}
+}
+
 static int do_check_common(struct bpf_verifier_env *env, int subprog)
 {
-	bool pop_log = !(env->log.level & BPF_LOG_LEVEL2);
 	struct bpf_verifier_state *state;
 	struct bpf_reg_state *regs;
 	int ret, i;
@@ -12011,11 +11925,8 @@ static int do_check_common(struct bpf_verifier_env *env, int subprog)
 			0 /* frameno */,
 			subprog);
 
-	state->first_insn_idx = env->subprog_info[subprog].start;
-	state->last_insn_idx = -1;
-
 	regs = state->frame[state->curframe]->regs;
-	if (subprog || env->prog->type == BPF_PROG_TYPE_EXT) {
+	if (subprog) {
 		ret = btf_prepare_func_args(env, subprog, regs);
 		if (ret)
 			goto out;
@@ -12045,17 +11956,13 @@ static int do_check_common(struct bpf_verifier_env *env, int subprog)
 
 	ret = do_check(env);
 out:
-	/* check for NULL is necessary, since cur_state can be freed inside
-	 * do_check() under memory pressure.
-	 */
-	if (env->cur_state) {
-		free_verifier_state(env->cur_state, true);
-		env->cur_state = NULL;
-	}
-	while (!pop_stack(env, NULL, NULL, false));
-	if (!ret && pop_log)
-		bpf_vlog_reset(&env->log, 0);
+	free_verifier_state(env->cur_state, true);
+	env->cur_state = NULL;
+	while (!pop_stack(env, NULL, NULL));
 	free_states(env);
+	if (ret)
+		/* clean aux data in case subprog was rejected */
+		sanitize_insn_aux_data(env);
 	return ret;
 }
 
