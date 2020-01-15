@@ -28,56 +28,6 @@
 	.map_delete_batch =			\
 	generic_map_delete_batch
 
-/*
- * The bucket lock has two protection scopes:
- *
- * 1) Serializing concurrent operations from BPF programs on differrent
- *    CPUs
- *
- * 2) Serializing concurrent operations from BPF programs and sys_bpf()
- *
- * BPF programs can execute in any context including perf, kprobes and
- * tracing. As there are almost no limits where perf, kprobes and tracing
- * can be invoked from the lock operations need to be protected against
- * deadlocks. Deadlocks can be caused by recursion and by an invocation in
- * the lock held section when functions which acquire this lock are invoked
- * from sys_bpf(). BPF recursion is prevented by incrementing the per CPU
- * variable bpf_prog_active, which prevents BPF programs attached to perf
- * events, kprobes and tracing to be invoked before the prior invocation
- * from one of these contexts completed. sys_bpf() uses the same mechanism
- * by pinning the task to the current CPU and incrementing the recursion
- * protection accross the map operation.
- *
- * This has subtle implications on PREEMPT_RT. PREEMPT_RT forbids certain
- * operations like memory allocations (even with GFP_ATOMIC) from atomic
- * contexts. This is required because even with GFP_ATOMIC the memory
- * allocator calls into code pathes which acquire locks with long held lock
- * sections. To ensure the deterministic behaviour these locks are regular
- * spinlocks, which are converted to 'sleepable' spinlocks on RT. The only
- * true atomic contexts on an RT kernel are the low level hardware
- * handling, scheduling, low level interrupt handling, NMIs etc. None of
- * these contexts should ever do memory allocations.
- *
- * As regular device interrupt handlers and soft interrupts are forced into
- * thread context, the existing code which does
- *   spin_lock*(); alloc(GPF_ATOMIC); spin_unlock*();
- * just works.
- *
- * In theory the BPF locks could be converted to regular spinlocks as well,
- * but the bucket locks and percpu_freelist locks can be taken from
- * arbitrary contexts (perf, kprobes, tracepoints) which are required to be
- * atomic contexts even on RT. These mechanisms require preallocated maps,
- * so there is no need to invoke memory allocations within the lock held
- * sections.
- *
- * BPF maps which need dynamic allocation are only used from (forced)
- * thread context on RT and can therefore use regular spinlocks which in
- * turn allows to invoke memory allocations from the lock held section.
- *
- * On a non RT kernel this distinction is neither possible nor required.
- * spinlock maps to raw_spinlock and the extra code is optimized out by the
- * compiler.
- */
 struct bucket {
 	struct hlist_nulls_head head;
 	union {
@@ -1383,12 +1333,10 @@ __htab_map_lookup_and_delete_batch(struct bpf_map *map,
 	void __user *ukeys = u64_to_user_ptr(attr->batch.keys);
 	void *ubatch = u64_to_user_ptr(attr->batch.in_batch);
 	u32 batch, max_count, size, bucket_size;
-	struct htab_elem *node_to_free = NULL;
 	u64 elem_map_flags, map_flags;
 	struct hlist_nulls_head *head;
 	struct hlist_nulls_node *n;
-	unsigned long flags = 0;
-	bool locked = false;
+	unsigned long flags;
 	struct htab_elem *l;
 	struct bucket *b;
 	int ret = 0;
@@ -1432,62 +1380,48 @@ alloc:
 	/* We cannot do copy_from_user or copy_to_user inside
 	 * the rcu_read_lock. Allocate enough space here.
 	 */
-	keys = kvmalloc_array(key_size, bucket_size, GFP_USER | __GFP_NOWARN);
-	values = kvmalloc_array(value_size, bucket_size, GFP_USER | __GFP_NOWARN);
+	keys = kvmalloc(key_size * bucket_size, GFP_USER | __GFP_NOWARN);
+	values = kvmalloc(value_size * bucket_size, GFP_USER | __GFP_NOWARN);
 	if (!keys || !values) {
 		ret = -ENOMEM;
 		goto after_loop;
 	}
 
 again:
-	bpf_disable_instrumentation();
+	preempt_disable();
+	this_cpu_inc(bpf_prog_active);
 	rcu_read_lock();
 again_nocopy:
 	dst_key = keys;
 	dst_val = values;
 	b = &htab->buckets[batch];
 	head = &b->head;
-	/* do not grab the lock unless need it (bucket_cnt > 0). */
-	if (locked)
-		flags = htab_lock_bucket(htab, b);
+	raw_spin_lock_irqsave(&b->lock, flags);
 
 	bucket_cnt = 0;
 	hlist_nulls_for_each_entry_rcu(l, n, head, hash_node)
 		bucket_cnt++;
 
-	if (bucket_cnt && !locked) {
-		locked = true;
-		goto again_nocopy;
-	}
-
 	if (bucket_cnt > (max_count - total)) {
 		if (total == 0)
 			ret = -ENOSPC;
-		/* Note that since bucket_cnt > 0 here, it is implicit
-		 * that the locked was grabbed, so release it.
-		 */
-		htab_unlock_bucket(htab, b, flags);
+		raw_spin_unlock_irqrestore(&b->lock, flags);
 		rcu_read_unlock();
-		bpf_enable_instrumentation();
+		this_cpu_dec(bpf_prog_active);
+		preempt_enable();
 		goto after_loop;
 	}
 
 	if (bucket_cnt > bucket_size) {
 		bucket_size = bucket_cnt;
-		/* Note that since bucket_cnt > 0 here, it is implicit
-		 * that the locked was grabbed, so release it.
-		 */
-		htab_unlock_bucket(htab, b, flags);
+		raw_spin_unlock_irqrestore(&b->lock, flags);
 		rcu_read_unlock();
-		bpf_enable_instrumentation();
+		this_cpu_dec(bpf_prog_active);
+		preempt_enable();
 		kvfree(keys);
 		kvfree(values);
 		goto alloc;
 	}
-
-	/* Next block is only safe to run if you have grabbed the lock */
-	if (!locked)
-		goto next_batch;
 
 	hlist_nulls_for_each_entry_safe(l, n, head, hash_node) {
 		memcpy(dst_key, l->key, key_size);
@@ -1513,33 +1447,16 @@ again_nocopy:
 		}
 		if (do_delete) {
 			hlist_nulls_del_rcu(&l->hash_node);
-
-			/* bpf_lru_push_free() will acquire lru_lock, which
-			 * may cause deadlock. See comments in function
-			 * prealloc_lru_pop(). Let us do bpf_lru_push_free()
-			 * after releasing the bucket lock.
-			 */
-			if (is_lru_map) {
-				l->batch_flink = node_to_free;
-				node_to_free = l;
-			} else {
+			if (is_lru_map)
+				bpf_lru_push_free(&htab->lru, &l->lru_node);
+			else
 				free_htab_elem(htab, l);
-			}
 		}
 		dst_key += key_size;
 		dst_val += value_size;
 	}
 
-	htab_unlock_bucket(htab, b, flags);
-	locked = false;
-
-	while (node_to_free) {
-		l = node_to_free;
-		node_to_free = node_to_free->batch_flink;
-		bpf_lru_push_free(&htab->lru, &l->lru_node);
-	}
-
-next_batch:
+	raw_spin_unlock_irqrestore(&b->lock, flags);
 	/* If we are not copying data, we can go to next bucket and avoid
 	 * unlocking the rcu.
 	 */
@@ -1549,7 +1466,8 @@ next_batch:
 	}
 
 	rcu_read_unlock();
-	bpf_enable_instrumentation();
+	this_cpu_dec(bpf_prog_active);
+	preempt_enable();
 	if (bucket_cnt && (copy_to_user(ukeys + total * key_size, keys,
 	    key_size * bucket_cnt) ||
 	    copy_to_user(uvalues + total * value_size, values,
@@ -1651,192 +1569,6 @@ htab_lru_map_lookup_and_delete_batch(struct bpf_map *map,
 						  true, false);
 }
 
-struct bpf_iter_seq_hash_map_info {
-	struct bpf_map *map;
-	struct bpf_htab *htab;
-	void *percpu_value_buf; // non-zero means percpu hash
-	u32 bucket_id;
-	u32 skip_elems;
-};
-
-static struct htab_elem *
-bpf_hash_map_seq_find_next(struct bpf_iter_seq_hash_map_info *info,
-			   struct htab_elem *prev_elem)
-{
-	const struct bpf_htab *htab = info->htab;
-	u32 skip_elems = info->skip_elems;
-	u32 bucket_id = info->bucket_id;
-	struct hlist_nulls_head *head;
-	struct hlist_nulls_node *n;
-	struct htab_elem *elem;
-	struct bucket *b;
-	u32 i, count;
-
-	if (bucket_id >= htab->n_buckets)
-		return NULL;
-
-	/* try to find next elem in the same bucket */
-	if (prev_elem) {
-		/* no update/deletion on this bucket, prev_elem should be still valid
-		 * and we won't skip elements.
-		 */
-		n = rcu_dereference_raw(hlist_nulls_next_rcu(&prev_elem->hash_node));
-		elem = hlist_nulls_entry_safe(n, struct htab_elem, hash_node);
-		if (elem)
-			return elem;
-
-		/* not found, unlock and go to the next bucket */
-		b = &htab->buckets[bucket_id++];
-		rcu_read_unlock();
-		skip_elems = 0;
-	}
-
-	for (i = bucket_id; i < htab->n_buckets; i++) {
-		b = &htab->buckets[i];
-		rcu_read_lock();
-
-		count = 0;
-		head = &b->head;
-		hlist_nulls_for_each_entry_rcu(elem, n, head, hash_node) {
-			if (count >= skip_elems) {
-				info->bucket_id = i;
-				info->skip_elems = count;
-				return elem;
-			}
-			count++;
-		}
-
-		rcu_read_unlock();
-		skip_elems = 0;
-	}
-
-	info->bucket_id = i;
-	info->skip_elems = 0;
-	return NULL;
-}
-
-static void *bpf_hash_map_seq_start(struct seq_file *seq, loff_t *pos)
-{
-	struct bpf_iter_seq_hash_map_info *info = seq->private;
-	struct htab_elem *elem;
-
-	elem = bpf_hash_map_seq_find_next(info, NULL);
-	if (!elem)
-		return NULL;
-
-	if (*pos == 0)
-		++*pos;
-	return elem;
-}
-
-static void *bpf_hash_map_seq_next(struct seq_file *seq, void *v, loff_t *pos)
-{
-	struct bpf_iter_seq_hash_map_info *info = seq->private;
-
-	++*pos;
-	++info->skip_elems;
-	return bpf_hash_map_seq_find_next(info, v);
-}
-
-static int __bpf_hash_map_seq_show(struct seq_file *seq, struct htab_elem *elem)
-{
-	struct bpf_iter_seq_hash_map_info *info = seq->private;
-	u32 roundup_key_size, roundup_value_size;
-	struct bpf_iter__bpf_map_elem ctx = {};
-	struct bpf_map *map = info->map;
-	struct bpf_iter_meta meta;
-	int ret = 0, off = 0, cpu;
-	struct bpf_prog *prog;
-	void __percpu *pptr;
-
-	meta.seq = seq;
-	prog = bpf_iter_get_info(&meta, elem == NULL);
-	if (prog) {
-		ctx.meta = &meta;
-		ctx.map = info->map;
-		if (elem) {
-			roundup_key_size = round_up(map->key_size, 8);
-			ctx.key = elem->key;
-			if (!info->percpu_value_buf) {
-				ctx.value = elem->key + roundup_key_size;
-			} else {
-				roundup_value_size = round_up(map->value_size, 8);
-				pptr = htab_elem_get_ptr(elem, map->key_size);
-				for_each_possible_cpu(cpu) {
-					bpf_long_memcpy(info->percpu_value_buf + off,
-							per_cpu_ptr(pptr, cpu),
-							roundup_value_size);
-					off += roundup_value_size;
-				}
-				ctx.value = info->percpu_value_buf;
-			}
-		}
-		ret = bpf_iter_run_prog(prog, &ctx);
-	}
-
-	return ret;
-}
-
-static int bpf_hash_map_seq_show(struct seq_file *seq, void *v)
-{
-	return __bpf_hash_map_seq_show(seq, v);
-}
-
-static void bpf_hash_map_seq_stop(struct seq_file *seq, void *v)
-{
-	if (!v)
-		(void)__bpf_hash_map_seq_show(seq, NULL);
-	else
-		rcu_read_unlock();
-}
-
-static int bpf_iter_init_hash_map(void *priv_data,
-				  struct bpf_iter_aux_info *aux)
-{
-	struct bpf_iter_seq_hash_map_info *seq_info = priv_data;
-	struct bpf_map *map = aux->map;
-	void *value_buf;
-	u32 buf_size;
-
-	if (map->map_type == BPF_MAP_TYPE_PERCPU_HASH ||
-	    map->map_type == BPF_MAP_TYPE_LRU_PERCPU_HASH) {
-		buf_size = round_up(map->value_size, 8) * num_possible_cpus();
-		value_buf = kmalloc(buf_size, GFP_USER | __GFP_NOWARN);
-		if (!value_buf)
-			return -ENOMEM;
-
-		seq_info->percpu_value_buf = value_buf;
-	}
-
-	bpf_map_inc_with_uref(map);
-	seq_info->map = map;
-	seq_info->htab = container_of(map, struct bpf_htab, map);
-	return 0;
-}
-
-static void bpf_iter_fini_hash_map(void *priv_data)
-{
-	struct bpf_iter_seq_hash_map_info *seq_info = priv_data;
-
-	bpf_map_put_with_uref(seq_info->map);
-	kfree(seq_info->percpu_value_buf);
-}
-
-static const struct seq_operations bpf_hash_map_seq_ops = {
-	.start	= bpf_hash_map_seq_start,
-	.next	= bpf_hash_map_seq_next,
-	.stop	= bpf_hash_map_seq_stop,
-	.show	= bpf_hash_map_seq_show,
-};
-
-static const struct bpf_iter_seq_info iter_seq_info = {
-	.seq_ops		= &bpf_hash_map_seq_ops,
-	.init_seq_private	= bpf_iter_init_hash_map,
-	.fini_seq_private	= bpf_iter_fini_hash_map,
-	.seq_priv_size		= sizeof(struct bpf_iter_seq_hash_map_info),
-};
-
-static int htab_map_btf_id;
 const struct bpf_map_ops htab_map_ops = {
 	.map_meta_equal = bpf_map_meta_equal,
 	.map_alloc_check = htab_map_alloc_check,
@@ -1849,9 +1581,6 @@ const struct bpf_map_ops htab_map_ops = {
 	.map_gen_lookup = htab_map_gen_lookup,
 	.map_seq_show_elem = htab_map_seq_show_elem,
 	BATCH_OPS(htab),
-	.map_btf_name = "bpf_htab",
-	.map_btf_id = &htab_map_btf_id,
-	.iter_seq_info = &iter_seq_info,
 };
 
 static int htab_lru_map_btf_id;
@@ -1868,9 +1597,6 @@ const struct bpf_map_ops htab_lru_map_ops = {
 	.map_gen_lookup = htab_lru_map_gen_lookup,
 	.map_seq_show_elem = htab_map_seq_show_elem,
 	BATCH_OPS(htab_lru),
-	.map_btf_name = "bpf_htab",
-	.map_btf_id = &htab_lru_map_btf_id,
-	.iter_seq_info = &iter_seq_info,
 };
 
 /* Called from eBPF program */
@@ -1987,9 +1713,6 @@ const struct bpf_map_ops htab_percpu_map_ops = {
 	.map_delete_elem = htab_map_delete_elem,
 	.map_seq_show_elem = htab_percpu_map_seq_show_elem,
 	BATCH_OPS(htab_percpu),
-	.map_btf_name = "bpf_htab",
-	.map_btf_id = &htab_percpu_map_btf_id,
-	.iter_seq_info = &iter_seq_info,
 };
 
 static int htab_lru_percpu_map_btf_id;
@@ -2004,9 +1727,6 @@ const struct bpf_map_ops htab_lru_percpu_map_ops = {
 	.map_delete_elem = htab_lru_map_delete_elem,
 	.map_seq_show_elem = htab_percpu_map_seq_show_elem,
 	BATCH_OPS(htab_lru_percpu),
-	.map_btf_name = "bpf_htab",
-	.map_btf_id = &htab_lru_percpu_map_btf_id,
-	.iter_seq_info = &iter_seq_info,
 };
 
 static int fd_htab_map_alloc_check(union bpf_attr *attr)
