@@ -1185,7 +1185,6 @@ static void do_bpf_send_signal(struct irq_work *entry)
 
 	work = container_of(entry, struct send_signal_irq_work, irq_work);
 	group_send_sig_info(work->sig, SEND_SIG_PRIV, work->task, work->type);
-	put_task_struct(work->task);
 }
 
 static int bpf_send_signal_common(u32 sig, enum pid_type type)
@@ -1256,130 +1255,8 @@ static const struct bpf_func_proto bpf_send_signal_thread_proto = {
 	.arg1_type	= ARG_ANYTHING,
 };
 
-BPF_CALL_3(bpf_d_path, struct path *, path, char *, buf, u32, sz)
-{
-	struct path copy;
-	long len;
-	char *p;
-
-	if (!sz)
-		return 0;
-
-	/*
-	 * The path pointer is verified as trusted and safe to use,
-	 * but let's double check it's valid anyway to workaround
-	 * potentially broken verifier.
-	 */
-	len = copy_from_kernel_nofault(&copy, path, sizeof(*path));
-	if (len < 0)
-		return len;
-
-	p = d_path(&copy, buf, sz);
-	if (IS_ERR(p)) {
-		len = PTR_ERR(p);
-	} else {
-		len = buf + sz - p;
-		memmove(buf, p, len);
-	}
-
-	return len;
-}
-
-BTF_SET_START(btf_allowlist_d_path)
-#ifdef CONFIG_SECURITY
-BTF_ID(func, security_file_permission)
-BTF_ID(func, security_inode_getattr)
-BTF_ID(func, security_file_open)
-#endif
-#ifdef CONFIG_SECURITY_PATH
-BTF_ID(func, security_path_truncate)
-#endif
-BTF_ID(func, vfs_truncate)
-BTF_ID(func, vfs_fallocate)
-BTF_ID(func, dentry_open)
-BTF_ID(func, vfs_getattr)
-BTF_ID(func, filp_close)
-BTF_SET_END(btf_allowlist_d_path)
-
-static bool bpf_d_path_allowed(const struct bpf_prog *prog)
-{
-	return btf_id_set_contains(&btf_allowlist_d_path, prog->aux->attach_btf_id);
-}
-
-BTF_ID_LIST_SINGLE(bpf_d_path_btf_ids, struct, path)
-
-static const struct bpf_func_proto bpf_d_path_proto = {
-	.func		= bpf_d_path,
-	.gpl_only	= false,
-	.ret_type	= RET_INTEGER,
-	.arg1_type	= ARG_PTR_TO_BTF_ID,
-	.arg1_btf_id	= &bpf_d_path_btf_ids[0],
-	.arg2_type	= ARG_PTR_TO_MEM,
-	.arg3_type	= ARG_CONST_SIZE_OR_ZERO,
-	.allowed	= bpf_d_path_allowed,
-};
-
-#define BTF_F_ALL	(BTF_F_COMPACT  | BTF_F_NONAME | \
-			 BTF_F_PTR_RAW | BTF_F_ZERO)
-
-static int bpf_btf_printf_prepare(struct btf_ptr *ptr, u32 btf_ptr_size,
-				  u64 flags, const struct btf **btf,
-				  s32 *btf_id)
-{
-	const struct btf_type *t;
-
-	if (unlikely(flags & ~(BTF_F_ALL)))
-		return -EINVAL;
-
-	if (btf_ptr_size != sizeof(struct btf_ptr))
-		return -EINVAL;
-
-	*btf = bpf_get_btf_vmlinux();
-
-	if (IS_ERR_OR_NULL(*btf))
-		return IS_ERR(*btf) ? PTR_ERR(*btf) : -EINVAL;
-
-	if (ptr->type_id > 0)
-		*btf_id = ptr->type_id;
-	else
-		return -EINVAL;
-
-	if (*btf_id > 0)
-		t = btf_type_by_id(*btf, *btf_id);
-	if (*btf_id <= 0 || !t)
-		return -ENOENT;
-
-	return 0;
-}
-
-BPF_CALL_5(bpf_snprintf_btf, char *, str, u32, str_size, struct btf_ptr *, ptr,
-	   u32, btf_ptr_size, u64, flags)
-{
-	const struct btf *btf;
-	s32 btf_id;
-	int ret;
-
-	ret = bpf_btf_printf_prepare(ptr, btf_ptr_size, flags, &btf, &btf_id);
-	if (ret)
-		return ret;
-
-	return btf_type_snprintf_show(btf, btf_id, ptr->ptr, str, str_size,
-				      flags);
-}
-
-const struct bpf_func_proto bpf_snprintf_btf_proto = {
-	.func		= bpf_snprintf_btf,
-	.gpl_only	= false,
-	.ret_type	= RET_INTEGER,
-	.arg1_type	= ARG_PTR_TO_MEM,
-	.arg2_type	= ARG_CONST_SIZE,
-	.arg3_type	= ARG_PTR_TO_MEM,
-	.arg4_type	= ARG_CONST_SIZE,
-	.arg5_type	= ARG_ANYTHING,
-};
-
-const struct bpf_func_proto *
-bpf_tracing_func_proto(enum bpf_func_id func_id, const struct bpf_prog *prog)
+static const struct bpf_func_proto *
+tracing_func_proto(enum bpf_func_id func_id, const struct bpf_prog *prog)
 {
 	switch (func_id) {
 	case BPF_FUNC_map_lookup_elem:
@@ -1440,32 +1317,6 @@ bpf_tracing_func_proto(enum bpf_func_id func_id, const struct bpf_prog *prog)
 		return &bpf_send_signal_proto;
 	case BPF_FUNC_send_signal_thread:
 		return &bpf_send_signal_thread_proto;
-	case BPF_FUNC_perf_event_read_value:
-		return &bpf_perf_event_read_value_proto;
-	case BPF_FUNC_get_ns_current_pid_tgid:
-		return &bpf_get_ns_current_pid_tgid_proto;
-	case BPF_FUNC_ringbuf_output:
-		return &bpf_ringbuf_output_proto;
-	case BPF_FUNC_ringbuf_reserve:
-		return &bpf_ringbuf_reserve_proto;
-	case BPF_FUNC_ringbuf_submit:
-		return &bpf_ringbuf_submit_proto;
-	case BPF_FUNC_ringbuf_discard:
-		return &bpf_ringbuf_discard_proto;
-	case BPF_FUNC_ringbuf_query:
-		return &bpf_ringbuf_query_proto;
-	case BPF_FUNC_jiffies64:
-		return &bpf_jiffies64_proto;
-	case BPF_FUNC_get_task_stack:
-		return &bpf_get_task_stack_proto;
-	case BPF_FUNC_copy_from_user:
-		return prog->aux->sleepable ? &bpf_copy_from_user_proto : NULL;
-	case BPF_FUNC_snprintf_btf:
-		return &bpf_snprintf_btf_proto;
-	case BPF_FUNC_per_cpu_ptr:
-		return &bpf_per_cpu_ptr_proto;
-	case BPF_FUNC_this_cpu_ptr:
-		return &bpf_this_cpu_ptr_proto;
 	default:
 		return NULL;
 	}
