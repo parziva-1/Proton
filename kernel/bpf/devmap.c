@@ -81,7 +81,7 @@ struct bpf_dtab {
 	u32 n_buckets;
 };
 
-static DEFINE_PER_CPU(struct list_head, dev_map_flush_list);
+static DEFINE_PER_CPU(struct list_head, dev_flush_list);
 static DEFINE_SPINLOCK(dev_map_lock);
 static LIST_HEAD(dev_map_list);
 
@@ -380,9 +380,9 @@ error:
  * are also complete. Using synchronize_rcu or call_rcu will suffice for this
  * because both wait for napi context to exit.
  */
-void __dev_map_flush(void)
+void __dev_flush(void)
 {
-	struct list_head *flush_list = this_cpu_ptr(&dev_map_flush_list);
+	struct list_head *flush_list = this_cpu_ptr(&dev_flush_list);
 	struct xdp_dev_bulk_queue *bq, *tmp;
 
 	list_for_each_entry_safe(bq, tmp, flush_list, flush_node)
@@ -410,9 +410,8 @@ struct bpf_dtab_netdev *__dev_map_lookup_elem(struct bpf_map *map, u32 key)
  */
 static int bq_enqueue(struct net_device *dev, struct xdp_frame *xdpf,
 		      struct net_device *dev_rx)
-
 {
-	struct list_head *flush_list = this_cpu_ptr(&dev_map_flush_list);
+	struct list_head *flush_list = this_cpu_ptr(&dev_flush_list);
 	struct xdp_dev_bulk_queue *bq = this_cpu_ptr(dev->xdp_bulkq);
 
 	if (unlikely(bq->count == DEV_MAP_BULK_SIZE))
@@ -449,6 +448,20 @@ static inline int __xdp_enqueue(struct net_device *dev, struct xdp_buff *xdp,
 		return -EOVERFLOW;
 
 	return bq_enqueue(dev, xdpf, dev_rx);
+}
+
+int dev_xdp_enqueue(struct net_device *dev, struct xdp_buff *xdp,
+		    struct net_device *dev_rx)
+{
+	return __xdp_enqueue(dev, xdp, dev_rx);
+}
+
+int dev_map_enqueue(struct bpf_dtab_netdev *dst, struct xdp_buff *xdp,
+		    struct net_device *dev_rx)
+{
+	struct net_device *dev = dst->dev;
+
+	return __xdp_enqueue(dev, xdp, dev_rx);
 }
 
 int dev_map_generic_redirect(struct bpf_dtab_netdev *dst, struct sk_buff *skb,
@@ -801,7 +814,7 @@ static int __init dev_map_init(void)
 	register_netdevice_notifier(&dev_map_notifier);
 
 	for_each_possible_cpu(cpu)
-		INIT_LIST_HEAD(&per_cpu(dev_map_flush_list, cpu));
+		INIT_LIST_HEAD(&per_cpu(dev_flush_list, cpu));
 	return 0;
 }
 

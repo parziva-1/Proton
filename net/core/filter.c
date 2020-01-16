@@ -3993,7 +3993,7 @@ static int __bpf_tx_xdp_map(struct net_device *dev_rx, void *fwd,
 
 void xdp_do_flush(void)
 {
-	__dev_map_flush();
+	__dev_flush();
 	__cpu_map_flush();
 	__xsk_map_flush();
 }
@@ -4045,7 +4045,18 @@ int xdp_do_redirect(struct net_device *dev, struct xdp_buff *xdp,
 	ri->tgt_value = NULL;
 	WRITE_ONCE(ri->map, NULL);
 
-	err = __bpf_tx_xdp_map(dev, fwd, map, xdp);
+	if (unlikely(!map)) {
+		fwd = dev_get_by_index_rcu(dev_net(dev), index);
+		if (unlikely(!fwd)) {
+			err = -EINVAL;
+			goto err;
+		}
+
+		err = dev_xdp_enqueue(fwd, xdp, dev);
+	} else {
+		err = __bpf_tx_xdp_map(dev, fwd, map, xdp);
+	}
+
 	if (unlikely(err))
 		goto err;
 
