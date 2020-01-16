@@ -906,19 +906,6 @@ struct bpf_prog_offload_ops;
 struct netlink_ext_ack;
 struct xdp_umem;
 struct xdp_dev_bulk_queue;
-struct bpf_xdp_link;
-
-enum bpf_xdp_mode {
-	XDP_MODE_SKB = 0,
-	XDP_MODE_DRV = 1,
-	XDP_MODE_HW = 2,
-	__MAX_XDP_MODE
-};
-
-struct bpf_xdp_entity {
-	struct bpf_prog *prog;
-	struct bpf_xdp_link *link;
-};
 
 struct netdev_bpf {
 	enum bpf_netdev_command command;

@@ -268,7 +268,7 @@ TRACE_EVENT(xdp_devmap_xmit,
 	),
 
 	TP_fast_assign(
-		__entry->from_ifindex	= from_dev->ifindex;
+		__entry->map_id		= map ? map->id : 0;
 		__entry->act		= XDP_REDIRECT;
 		__entry->to_ifindex	= to_dev->ifindex;
 		__entry->drops		= drops;
