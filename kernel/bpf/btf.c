@@ -276,91 +276,6 @@ static const char *btf_type_str(const struct btf_type *t)
 	return btf_kind_str[BTF_INFO_KIND(t->info)];
 }
 
-/* Chunk size we use in safe copy of data to be shown. */
-#define BTF_SHOW_OBJ_SAFE_SIZE		32
-
-/*
- * This is the maximum size of a base type value (equivalent to a
- * 128-bit int); if we are at the end of our safe buffer and have
- * less than 16 bytes space we can't be assured of being able
- * to copy the next type safely, so in such cases we will initiate
- * a new copy.
- */
-#define BTF_SHOW_OBJ_BASE_TYPE_SIZE	16
-
-/* Type name size */
-#define BTF_SHOW_NAME_SIZE		80
-
-/*
- * Common data to all BTF show operations. Private show functions can add
- * their own data to a structure containing a struct btf_show and consult it
- * in the show callback.  See btf_type_show() below.
- *
- * One challenge with showing nested data is we want to skip 0-valued
- * data, but in order to figure out whether a nested object is all zeros
- * we need to walk through it.  As a result, we need to make two passes
- * when handling structs, unions and arrays; the first path simply looks
- * for nonzero data, while the second actually does the display.  The first
- * pass is signalled by show->state.depth_check being set, and if we
- * encounter a non-zero value we set show->state.depth_to_show to
- * the depth at which we encountered it.  When we have completed the
- * first pass, we will know if anything needs to be displayed if
- * depth_to_show > depth.  See btf_[struct,array]_show() for the
- * implementation of this.
- *
- * Another problem is we want to ensure the data for display is safe to
- * access.  To support this, the anonymous "struct {} obj" tracks the data
- * object and our safe copy of it.  We copy portions of the data needed
- * to the object "copy" buffer, but because its size is limited to
- * BTF_SHOW_OBJ_COPY_LEN bytes, multiple copies may be required as we
- * traverse larger objects for display.
- *
- * The various data type show functions all start with a call to
- * btf_show_start_type() which returns a pointer to the safe copy
- * of the data needed (or if BTF_SHOW_UNSAFE is specified, to the
- * raw data itself).  btf_show_obj_safe() is responsible for
- * using copy_from_kernel_nofault() to update the safe data if necessary
- * as we traverse the object's data.  skbuff-like semantics are
- * used:
- *
- * - obj.head points to the start of the toplevel object for display
- * - obj.size is the size of the toplevel object
- * - obj.data points to the current point in the original data at
- *   which our safe data starts.  obj.data will advance as we copy
- *   portions of the data.
- *
- * In most cases a single copy will suffice, but larger data structures
- * such as "struct task_struct" will require many copies.  The logic in
- * btf_show_obj_safe() handles the logic that determines if a new
- * copy_from_kernel_nofault() is needed.
- */
-struct btf_show {
-	u64 flags;
-	void *target;	/* target of show operation (seq file, buffer) */
-	__printf(2, 0) void (*showfn)(struct btf_show *show, const char *fmt, va_list args);
-	const struct btf *btf;
-	/* below are used during iteration */
-	struct {
-		u8 depth;
-		u8 depth_to_show;
-		u8 depth_check;
-		u8 array_member:1,
-		   array_terminated:1;
-		u16 array_encoding;
-		u32 type_id;
-		int status;			/* non-zero for error */
-		const struct btf_type *type;
-		const struct btf_member *member;
-		char name[BTF_SHOW_NAME_SIZE];	/* space for member name/type */
-	} state;
-	struct {
-		u32 size;
-		void *head;
-		void *data;
-		u8 safe[BTF_SHOW_OBJ_SAFE_SIZE];
-	} obj;
-};
-
 struct btf_kind_operations {
 	s32 (*check_meta)(struct btf_verifier_env *env,
 			  const struct btf_type *t,
@@ -4826,6 +4741,148 @@ int btf_distill_func_proto(struct bpf_verifier_log *log,
 	return 0;
 }
 
+/* Compare BTFs of two functions assuming only scalars and pointers to context.
+ * t1 points to BTF_KIND_FUNC in btf1
+ * t2 points to BTF_KIND_FUNC in btf2
+ * Returns:
+ * EINVAL - function prototype mismatch
+ * EFAULT - verifier bug
+ * 0 - 99% match. The last 1% is validated by the verifier.
+ */
+int btf_check_func_type_match(struct bpf_verifier_log *log,
+			      struct btf *btf1, const struct btf_type *t1,
+			      struct btf *btf2, const struct btf_type *t2)
+{
+	const struct btf_param *args1, *args2;
+	const char *fn1, *fn2, *s1, *s2;
+	u32 nargs1, nargs2, i;
+
+	fn1 = btf_name_by_offset(btf1, t1->name_off);
+	fn2 = btf_name_by_offset(btf2, t2->name_off);
+
+	if (btf_func_linkage(t1) != BTF_FUNC_GLOBAL) {
+		bpf_log(log, "%s() is not a global function\n", fn1);
+		return -EINVAL;
+	}
+	if (btf_func_linkage(t2) != BTF_FUNC_GLOBAL) {
+		bpf_log(log, "%s() is not a global function\n", fn2);
+		return -EINVAL;
+	}
+
+	t1 = btf_type_by_id(btf1, t1->type);
+	if (!t1 || !btf_type_is_func_proto(t1))
+		return -EFAULT;
+	t2 = btf_type_by_id(btf2, t2->type);
+	if (!t2 || !btf_type_is_func_proto(t2))
+		return -EFAULT;
+
+	args1 = (const struct btf_param *)(t1 + 1);
+	nargs1 = btf_type_vlen(t1);
+	args2 = (const struct btf_param *)(t2 + 1);
+	nargs2 = btf_type_vlen(t2);
+
+	if (nargs1 != nargs2) {
+		bpf_log(log, "%s() has %d args while %s() has %d args\n",
+			fn1, nargs1, fn2, nargs2);
+		return -EINVAL;
+	}
+
+	t1 = btf_type_skip_modifiers(btf1, t1->type, NULL);
+	t2 = btf_type_skip_modifiers(btf2, t2->type, NULL);
+	if (t1->info != t2->info) {
+		bpf_log(log,
+			"Return type %s of %s() doesn't match type %s of %s()\n",
+			btf_type_str(t1), fn1,
+			btf_type_str(t2), fn2);
+		return -EINVAL;
+	}
+
+	for (i = 0; i < nargs1; i++) {
+		t1 = btf_type_skip_modifiers(btf1, args1[i].type, NULL);
+		t2 = btf_type_skip_modifiers(btf2, args2[i].type, NULL);
+
+		if (t1->info != t2->info) {
+			bpf_log(log, "arg%d in %s() is %s while %s() has %s\n",
+				i, fn1, btf_type_str(t1),
+				fn2, btf_type_str(t2));
+			return -EINVAL;
+		}
+		if (btf_type_has_size(t1) && t1->size != t2->size) {
+			bpf_log(log,
+				"arg%d in %s() has size %d while %s() has %d\n",
+				i, fn1, t1->size,
+				fn2, t2->size);
+			return -EINVAL;
+		}
+
+		/* global functions are validated with scalars and pointers
+		 * to context only. And only global functions can be replaced.
+		 * Hence type check only those types.
+		 */
+		if (btf_type_is_int(t1) || btf_type_is_enum(t1))
+			continue;
+		if (!btf_type_is_ptr(t1)) {
+			bpf_log(log,
+				"arg%d in %s() has unrecognized type\n",
+				i, fn1);
+			return -EINVAL;
+		}
+		t1 = btf_type_skip_modifiers(btf1, t1->type, NULL);
+		t2 = btf_type_skip_modifiers(btf2, t2->type, NULL);
+		if (!btf_type_is_struct(t1)) {
+			bpf_log(log,
+				"arg%d in %s() is not a pointer to context\n",
+				i, fn1);
+			return -EINVAL;
+		}
+		if (!btf_type_is_struct(t2)) {
+			bpf_log(log,
+				"arg%d in %s() is not a pointer to context\n",
+				i, fn2);
+			return -EINVAL;
+		}
+		/* This is an optional check to make program writing easier.
+		 * Compare names of structs and report an error to the user.
+		 * btf_prepare_func_args() already checked that t2 struct
+		 * is a context type. btf_prepare_func_args() will check
+		 * later that t1 struct is a context type as well.
+		 */
+		s1 = btf_name_by_offset(btf1, t1->name_off);
+		s2 = btf_name_by_offset(btf2, t2->name_off);
+		if (strcmp(s1, s2)) {
+			bpf_log(log,
+				"arg%d %s(struct %s *) doesn't match %s(struct %s *)\n",
+				i, fn1, s1, fn2, s2);
+			return -EINVAL;
+		}
+	}
+	return 0;
+}
+
+/* Compare BTFs of given program with BTF of target program */
+int btf_check_type_match(struct bpf_verifier_env *env, struct bpf_prog *prog,
+			 struct btf *btf2, const struct btf_type *t2)
+{
+	struct btf *btf1 = prog->aux->btf;
+	const struct btf_type *t1;
+	u32 btf_id = 0;
+
+	if (!prog->aux->func_info) {
+		bpf_log(&env->log, "Program extension requires BTF\n");
+		return -EINVAL;
+	}
+
+	btf_id = prog->aux->func_info[0].type_id;
+	if (!btf_id)
+		return -EFAULT;
+
+	t1 = btf_type_by_id(btf1, btf_id);
+	if (!t1 || !btf_type_is_func(t1))
+		return -EFAULT;
+
+	return btf_check_func_type_match(&env->log, btf1, t1, btf2, t2);
+}
+
 /* Compare BTF of a function with given bpf_reg_state.
  * Returns:
  * EFAULT - there is a verifier bug. Abort verification.
@@ -4935,6 +4992,7 @@ int btf_prepare_func_args(struct bpf_verifier_env *env, int subprog,
 {
 	struct bpf_verifier_log *log = &env->log;
 	struct bpf_prog *prog = env->prog;
+	enum bpf_prog_type prog_type = prog->type;
 	struct btf *btf = prog->aux->btf;
 	const struct btf_param *args;
 	const struct btf_type *t;
@@ -4972,6 +5030,8 @@ int btf_prepare_func_args(struct bpf_verifier_env *env, int subprog,
 		bpf_log(log, "Verifier bug in function %s()\n", tname);
 		return -EFAULT;
 	}
+	if (prog_type == BPF_PROG_TYPE_EXT)
+		prog_type = prog->aux->linked_prog->type;
 
 	t = btf_type_by_id(btf, t->type);
 	if (!t || !btf_type_is_func_proto(t)) {
@@ -5007,7 +5067,7 @@ int btf_prepare_func_args(struct bpf_verifier_env *env, int subprog,
 			continue;
 		}
 		if (btf_type_is_ptr(t) &&
-		    btf_get_prog_ctx_type(log, btf, t, prog->type, i)) {
+		    btf_get_prog_ctx_type(log, btf, t, prog_type, i)) {
 			reg[i + 1].type = PTR_TO_CTX;
 			continue;
 		}
