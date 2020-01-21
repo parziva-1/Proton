@@ -1394,7 +1394,7 @@ static void move_to_bypass_jobqueue(struct z_erofs_pcluster *pcl,
 	qtail[JQ_BYPASS] = &pcl->next;
 }
 
-static bool z_erofs_submit_queue(struct super_block *sb,
+static void z_erofs_submit_queue(struct super_block *sb,
 				 z_erofs_next_pcluster_t owned_head,
 				 struct list_head *pagepool,
 				 struct z_erofs_decompressqueue *fgq,
@@ -1403,19 +1403,12 @@ static bool z_erofs_submit_queue(struct super_block *sb,
 	struct erofs_sb_info *const sbi = EROFS_SB(sb);
 	z_erofs_next_pcluster_t qtail[NR_JOBQUEUES];
 	struct z_erofs_decompressqueue *q[NR_JOBQUEUES];
-	struct bio *bio;
 	void *bi_private;
 	/* since bio will be NULL, no need to initialize last_index */
-	pgoff_t last_index;
+	pgoff_t uninitialized_var(last_index);
 	unsigned int nr_bios = 0;
 	struct bio *bio = NULL;
 
-	if (owned_head == Z_EROFS_PCLUSTER_TAIL)
-		return false;
-
-	force_submit = false;
-	bio = NULL;
-	nr_bios = 0;
 	bi_private = jobqueueset_init(sb, q, fgq, force_fg);
 	qtail[JQ_BYPASS] = &q[JQ_BYPASS]->head;
 	qtail[JQ_SUBMIT] = &q[JQ_SUBMIT]->head;
@@ -1436,7 +1429,7 @@ static bool z_erofs_submit_queue(struct super_block *sb,
 		pcl = container_of(owned_head, struct z_erofs_pcluster, next);
 
 		cur = pcl->obj.index;
-		end = cur + pcl->pclusterpages;
+		end = cur + BIT(pcl->clusterbits);
 
 		/* close the main owned chain at first */
 		owned_head = cmpxchg(&pcl->next, Z_EROFS_PCLUSTER_TAIL,
@@ -1444,6 +1437,7 @@ static bool z_erofs_submit_queue(struct super_block *sb,
 
 		do {
 			struct page *page;
+			int err;
 
 			page = pickup_page_for_submission(pcl, i++, pagepool,
 							  MNGD_MAPPING(sbi),
@@ -1460,14 +1454,17 @@ submit_bio_retry:
 			if (!bio) {
 				bio = bio_alloc(GFP_NOIO, BIO_MAX_PAGES);
 
-			bio->bi_end_io = z_erofs_decompressqueue_endio;
-			bio_set_dev(bio, sb->s_bdev);
-			bio->bi_iter.bi_sector = (sector_t)(first_index + i) <<
-				LOG_SECTORS_PER_BLOCK;
-			bio->bi_private = bi_private;
-			bio->bi_opf = REQ_OP_READ;
+				bio->bi_end_io = z_erofs_decompressqueue_endio;
+				bio_set_dev(bio, sb->s_bdev);
+				bio->bi_iter.bi_sector = (sector_t)cur <<
+					LOG_SECTORS_PER_BLOCK;
+				bio->bi_private = bi_private;
+				bio->bi_opf = REQ_OP_READ;
+				++nr_bios;
+			}
 
-			if (bio_add_page(bio, page, PAGE_SIZE, 0) < PAGE_SIZE)
+			err = bio_add_page(bio, page, PAGE_SIZE, 0);
+			if (err < PAGE_SIZE)
 				goto submit_bio_retry;
 
 			last_index = cur;
@@ -1489,10 +1486,9 @@ submit_bio_retry:
 	 */
 	if (!*force_fg && !nr_bios) {
 		kvfree(q[JQ_SUBMIT]);
-		return true;
+		return;
 	}
 	z_erofs_decompress_kickoff(q[JQ_SUBMIT], *force_fg, nr_bios);
-	return true;
 }
 
 static void z_erofs_runqueue(struct super_block *sb,
@@ -1501,8 +1497,7 @@ static void z_erofs_runqueue(struct super_block *sb,
 {
 	struct z_erofs_decompressqueue io[NR_JOBQUEUES];
 
-	if (!z_erofs_submit_queue(sb, clt->owned_head,
-				  pagepool, io, &force_fg))
+	if (clt->owned_head == Z_EROFS_PCLUSTER_TAIL)
 		return;
 	z_erofs_submit_queue(sb, clt->owned_head, pagepool, io, &force_fg);
 
