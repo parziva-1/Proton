@@ -13,8 +13,6 @@
 #include <linux/filter.h>
 #include <linux/ctype.h>
 #include <linux/jiffies.h>
-#include <linux/pid_namespace.h>
-#include <linux/proc_ns.h>
 
 #include "../../lib/kstrtox.h"
 
