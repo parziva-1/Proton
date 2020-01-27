@@ -439,8 +439,11 @@ static int veth_xdp_xmit(struct net_device *dev, int n,
 	unsigned int max_len;
 	struct veth_rq *rq;
 
-	if (unlikely(flags & ~XDP_XMIT_FLAGS_MASK))
-		return -EINVAL;
+	rcu_read_lock();
+	if (unlikely(flags & ~XDP_XMIT_FLAGS_MASK)) {
+		ret = -EINVAL;
+		goto drop;
+	}
 
 	rcu_read_lock();
 	rcv = rcu_dereference(priv->peer);
@@ -474,16 +477,15 @@ static int veth_xdp_xmit(struct net_device *dev, int n,
 	if (flags & XDP_XMIT_FLUSH)
 		__veth_xdp_flush(rq);
 
-	ret = n - drops;
-	if (ndo_xmit) {
-		u64_stats_update_begin(&rq->stats.syncp);
-		rq->stats.vs.peer_tq_xdp_xmit += n - drops;
-		rq->stats.vs.peer_tq_xdp_xmit_err += drops;
-		u64_stats_update_end(&rq->stats.syncp);
+	if (likely(!drops)) {
+		rcu_read_unlock();
+		return n;
 	}
 
-out:
+	ret = n - drops;
+drop:
 	rcu_read_unlock();
+	atomic64_add(drops, &priv->dropped);
 
 	return ret;
 }
