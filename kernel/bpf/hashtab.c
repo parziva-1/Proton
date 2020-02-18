@@ -1449,7 +1449,7 @@ again_nocopy:
 	head = &b->head;
 	/* do not grab the lock unless need it (bucket_cnt > 0). */
 	if (locked)
-		flags = htab_lock_bucket(htab, b);
+		raw_spin_lock_irqsave(&b->lock, flags);
 
 	bucket_cnt = 0;
 	hlist_nulls_for_each_entry_rcu(l, n, head, hash_node)
@@ -1466,7 +1466,7 @@ again_nocopy:
 		/* Note that since bucket_cnt > 0 here, it is implicit
 		 * that the locked was grabbed, so release it.
 		 */
-		htab_unlock_bucket(htab, b, flags);
+		raw_spin_unlock_irqrestore(&b->lock, flags);
 		rcu_read_unlock();
 		bpf_enable_instrumentation();
 		goto after_loop;
@@ -1477,7 +1477,7 @@ again_nocopy:
 		/* Note that since bucket_cnt > 0 here, it is implicit
 		 * that the locked was grabbed, so release it.
 		 */
-		htab_unlock_bucket(htab, b, flags);
+		raw_spin_unlock_irqrestore(&b->lock, flags);
 		rcu_read_unlock();
 		bpf_enable_instrumentation();
 		kvfree(keys);
@@ -1530,6 +1530,7 @@ again_nocopy:
 		dst_val += value_size;
 	}
 
+<<<<<<< HEAD
 	htab_unlock_bucket(htab, b, flags);
 	locked = false;
 
@@ -1539,6 +1540,10 @@ again_nocopy:
 		bpf_lru_push_free(&htab->lru, &l->lru_node);
 	}
 
+=======
+	raw_spin_unlock_irqrestore(&b->lock, flags);
+	locked = false;
+>>>>>>> 95336e2a552f (UPSTREAM: bpf: Do not grab the bucket spinlock by default on htab batch ops)
 next_batch:
 	/* If we are not copying data, we can go to next bucket and avoid
 	 * unlocking the rcu.
