@@ -318,17 +318,20 @@ static int sock_map_link_no_progs(struct bpf_map *map, struct sock *sk)
 	struct sk_psock *psock;
 	int ret;
 
-	psock = sock_map_psock_get_checked(sk);
+	psock = sk_psock_get_checked(sk);
 	if (IS_ERR(psock))
 		return PTR_ERR(psock);
 
-	if (!psock) {
-		psock = sk_psock_init(sk, map->numa_node);
-		if (IS_ERR(psock))
-			return PTR_ERR(psock);
+	if (psock) {
+		tcp_bpf_reinit(sk);
+		return 0;
 	}
 
-	ret = sock_map_init_proto(sk, psock);
+	psock = sk_psock_init(sk, map->numa_node);
+	if (!psock)
+		return -ENOMEM;
+
+	ret = tcp_bpf_init(sk);
 	if (ret < 0)
 		sk_psock_put(sk, psock);
 	return ret;
@@ -551,11 +554,6 @@ static bool sk_is_tcp(const struct sock *sk)
 static bool sock_map_sk_state_allowed(const struct sock *sk)
 {
 	return (1 << sk->sk_state) & (TCPF_ESTABLISHED | TCPF_LISTEN);
-}
-
-static bool sock_map_redirect_allowed(const struct sock *sk)
-{
-	return sk->sk_state != TCP_LISTEN;
 }
 
 static int sock_map_update_elem(struct bpf_map *map, void *key,
