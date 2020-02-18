@@ -548,32 +548,18 @@ static bool sk_is_tcp(const struct sock *sk)
 	       sk->sk_protocol == IPPROTO_TCP;
 }
 
-static bool sk_is_udp(const struct sock *sk)
-{
-	return sk->sk_type == SOCK_DGRAM &&
-	       sk->sk_protocol == IPPROTO_UDP;
-}
-
-static bool sock_map_sk_is_suitable(const struct sock *sk)
-{
-	return sk_is_tcp(sk) || sk_is_udp(sk);
-}
-
 static bool sock_map_sk_state_allowed(const struct sock *sk)
 {
-	if (sk_is_tcp(sk))
-		return (1 << sk->sk_state) & (TCPF_ESTABLISHED | TCPF_LISTEN);
-	else if (sk_is_udp(sk))
-		return sk_hashed(sk);
-
-	return false;
+	return (1 << sk->sk_state) & (TCPF_ESTABLISHED | TCPF_LISTEN);
 }
 
-static int sock_hash_update_common(struct bpf_map *map, void *key,
-				   struct sock *sk, u64 flags);
+static bool sock_map_redirect_allowed(const struct sock *sk)
+{
+	return sk->sk_state != TCP_LISTEN;
+}
 
-int sock_map_update_elem_sys(struct bpf_map *map, void *key, void *value,
-			     u64 flags)
+static int sock_map_update_elem(struct bpf_map *map, void *key,
+				void *value, u64 flags)
 {
 	struct socket *sock;
 	struct sock *sk;
@@ -952,6 +938,38 @@ out_unlock:
 	sk_psock_put(sk, psock);
 out_free:
 	sk_psock_free_link(link);
+	return ret;
+}
+
+static int sock_hash_update_elem(struct bpf_map *map, void *key,
+				 void *value, u64 flags)
+{
+	u32 ufd = *(u32 *)value;
+	struct socket *sock;
+	struct sock *sk;
+	int ret;
+
+	sock = sockfd_lookup(ufd, &ret);
+	if (!sock)
+		return ret;
+	sk = sock->sk;
+	if (!sk) {
+		ret = -EINVAL;
+		goto out;
+	}
+	if (!sock_map_sk_is_suitable(sk)) {
+		ret = -EOPNOTSUPP;
+		goto out;
+	}
+
+	sock_map_sk_acquire(sk);
+	if (!sock_map_sk_state_allowed(sk))
+		ret = -EOPNOTSUPP;
+	else
+		ret = sock_hash_update_common(map, key, sk, flags);
+	sock_map_sk_release(sk);
+out:
+	fput(sock->file);
 	return ret;
 }
 
