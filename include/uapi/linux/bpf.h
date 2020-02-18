@@ -1740,11 +1740,11 @@ union bpf_attr {
  * 		by the caller. Any higher bits in the *flags* argument must be
  * 		unset.
  *
- * 		See also **bpf_redirect**\ (), which only supports redirecting
- * 		to an ifindex, but doesn't require a map to do so.
+ * 		See also bpf_redirect(), which only supports redirecting to an
+ * 		ifindex, but doesn't require a map to do so.
  * 	Return
  * 		**XDP_REDIRECT** on success, or the value of the two lower bits
- * 		of the *flags* argument on error.
+ * 		of the **flags* argument on error.
  *
  * int bpf_sk_redirect_map(struct sk_buff *skb, struct bpf_map *map, u32 key, u64 flags)
  * 	Description
