@@ -10066,8 +10066,7 @@ BPF_CALL_4(sk_select_reuseport, struct sk_reuseport_kern *, reuse_kern,
 		 * Other maps (e.g. sock_map) do not provide this guarantee and
 		 * the sk may never be in the reuseport group to begin with.
 		 */
-		err = is_sockarray ? -ENOENT : -EINVAL;
-		goto error;
+		return is_sockarray ? -ENOENT : -EINVAL;
 	}
 
 	if (unlikely(reuse->reuseport_id != reuse_kern->reuseport_id)) {
