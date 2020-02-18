@@ -10072,15 +10072,13 @@ BPF_CALL_4(sk_select_reuseport, struct sk_reuseport_kern *, reuse_kern,
 	if (unlikely(reuse->reuseport_id != reuse_kern->reuseport_id)) {
 		struct sock *sk = reuse_kern->sk;
 
-		if (sk->sk_protocol != selected_sk->sk_protocol) {
-			err = -EPROTOTYPE;
-		} else if (sk->sk_family != selected_sk->sk_family) {
-			err = -EAFNOSUPPORT;
-		} else {
-			/* Catch all. Likely bound to a different sockaddr. */
-			err = -EBADFD;
-		}
-		goto error;
+		if (sk->sk_protocol != selected_sk->sk_protocol)
+			return -EPROTOTYPE;
+		else if (sk->sk_family != selected_sk->sk_family)
+			return -EAFNOSUPPORT;
+
+		/* Catch all. Likely bound to a different sockaddr. */
+		return -EBADFD;
 	}
 
 	reuse_kern->selected_sk = selected_sk;
