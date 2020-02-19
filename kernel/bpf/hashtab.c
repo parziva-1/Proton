@@ -1333,6 +1333,7 @@ __htab_map_lookup_and_delete_batch(struct bpf_map *map,
 	void __user *ukeys = u64_to_user_ptr(attr->batch.keys);
 	void *ubatch = u64_to_user_ptr(attr->batch.in_batch);
 	u32 batch, max_count, size, bucket_size;
+	struct htab_elem *node_to_free = NULL;
 	u64 elem_map_flags, map_flags;
 	struct hlist_nulls_head *head;
 	struct hlist_nulls_node *n;
@@ -1465,10 +1466,18 @@ again_nocopy:
 		}
 		if (do_delete) {
 			hlist_nulls_del_rcu(&l->hash_node);
-			if (is_lru_map)
-				bpf_lru_push_free(&htab->lru, &l->lru_node);
-			else
+
+			/* bpf_lru_push_free() will acquire lru_lock, which
+			 * may cause deadlock. See comments in function
+			 * prealloc_lru_pop(). Let us do bpf_lru_push_free()
+			 * after releasing the bucket lock.
+			 */
+			if (is_lru_map) {
+				l->batch_flink = node_to_free;
+				node_to_free = l;
+			} else {
 				free_htab_elem(htab, l);
+			}
 		}
 		dst_key += key_size;
 		dst_val += value_size;
@@ -1476,6 +1485,13 @@ again_nocopy:
 
 	raw_spin_unlock_irqrestore(&b->lock, flags);
 	locked = false;
+
+	while (node_to_free) {
+		l = node_to_free;
+		node_to_free = node_to_free->batch_flink;
+		bpf_lru_push_free(&htab->lru, &l->lru_node);
+	}
+
 next_batch:
 	/* If we are not copying data, we can go to next bucket and avoid
 	 * unlocking the rcu.
