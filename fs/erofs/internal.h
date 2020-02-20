@@ -75,6 +75,9 @@ struct erofs_sb_info {
 	/* managed XArray arranged in physical block number */
 	struct xarray managed_pslots;
 
+	/* threshold for decompression synchronously */
+	unsigned int max_sync_decompress_pages;
+
 	unsigned int shrinker_run_no;
 	u16 available_compr_algs;
 
@@ -439,8 +442,8 @@ struct page *erofs_allocpage(struct list_head *pool, gfp_t gfp);
 int erofs_workgroup_put(struct erofs_workgroup *grp);
 struct erofs_workgroup *erofs_find_workgroup(struct super_block *sb,
 					     pgoff_t index);
-int erofs_register_workgroup(struct super_block *sb,
-			     struct erofs_workgroup *grp);
+struct erofs_workgroup *erofs_insert_workgroup(struct super_block *sb,
+					       struct erofs_workgroup *grp);
 void erofs_workgroup_free_rcu(struct erofs_workgroup *grp);
 void erofs_shrinker_register(struct super_block *sb);
 void erofs_shrinker_unregister(struct super_block *sb);
