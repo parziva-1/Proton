@@ -103,7 +103,7 @@ static int bpf_test_run(struct bpf_prog *prog, void *ctx, u32 repeat,
 		repeat = 1;
 
 	rcu_read_lock();
-	preempt_disable();
+	migrate_disable();
 	time_start = ktime_get_ns();
 	for (i = 0; i < repeat; i++) {
 		bpf_cgroup_storage_set(storage);
@@ -117,15 +117,24 @@ static int bpf_test_run(struct bpf_prog *prog, void *ctx, u32 repeat,
 			ret = -EINTR;
 			break;
 
-		if (xdp)
-			*retval = bpf_prog_run_xdp(prog, ctx);
-		else
-			*retval = BPF_PROG_RUN(prog, ctx);
+		if (need_resched()) {
+			time_spent += ktime_get_ns() - time_start;
+			migrate_enable();
+			rcu_read_unlock();
 
 		bpf_cgroup_storage_unset();
 
-	} while (bpf_test_timer_continue(&t, repeat, &ret, time));
-	bpf_test_timer_leave(&t);
+			rcu_read_lock();
+			migrate_disable();
+			time_start = ktime_get_ns();
+		}
+	}
+	time_spent += ktime_get_ns() - time_start;
+	migrate_enable();
+	rcu_read_unlock();
+
+	do_div(time_spent, repeat);
+	*time = time_spent > U32_MAX ? U32_MAX : (u32)time_spent;
 
 	for_each_cgroup_storage_type(stype)
 		bpf_cgroup_storage_free(storage[stype]);
