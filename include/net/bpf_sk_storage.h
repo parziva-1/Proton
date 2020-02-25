@@ -21,7 +21,6 @@ void bpf_sk_storage_free(struct sock *sk);
 extern const struct bpf_func_proto bpf_sk_storage_get_proto;
 extern const struct bpf_func_proto bpf_sk_storage_delete_proto;
 
-struct bpf_local_storage_elem;
 struct bpf_sk_storage_diag;
 struct sk_buff;
 struct nlattr;
