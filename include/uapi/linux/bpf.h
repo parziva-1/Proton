@@ -407,7 +407,8 @@ enum {
 	BPF_F_CLONE		= (1U << 9),
 
 /* Enable memory-mapping BPF map */
-#define BPF_F_MMAPABLE		(1U << 10)
+	BPF_F_MMAPABLE		= (1U << 10),
+};
 
 /* Flags for BPF_PROG_QUERY. */
 
@@ -3245,7 +3246,6 @@ enum {
 	BPF_F_PSEUDO_HDR		= (1ULL << 4),
 	BPF_F_MARK_MANGLED_0		= (1ULL << 5),
 	BPF_F_MARK_ENFORCE		= (1ULL << 6),
-	BPF_F_IPV6			= (1ULL << 7),
 };
 
 /* BPF_FUNC_clone_redirect and BPF_FUNC_redirect flags. */
@@ -3291,14 +3291,6 @@ enum {
 	BPF_F_CURRENT_NETNS		= (-1L),
 };
 
-/* BPF_FUNC_csum_level level values. */
-enum {
-	BPF_CSUM_LEVEL_QUERY,
-	BPF_CSUM_LEVEL_INC,
-	BPF_CSUM_LEVEL_DEC,
-	BPF_CSUM_LEVEL_RESET,
-};
-
 /* BPF_FUNC_skb_adjust_room flags. */
 enum {
 	BPF_F_ADJ_ROOM_FIXED_GSO	= (1ULL << 0),
@@ -3306,7 +3298,6 @@ enum {
 	BPF_F_ADJ_ROOM_ENCAP_L3_IPV6	= (1ULL << 2),
 	BPF_F_ADJ_ROOM_ENCAP_L4_GRE	= (1ULL << 3),
 	BPF_F_ADJ_ROOM_ENCAP_L4_UDP	= (1ULL << 4),
-	BPF_F_ADJ_ROOM_NO_CSUM_RESET	= (1ULL << 5),
 };
 
 enum {
@@ -3323,51 +3314,15 @@ enum {
 	BPF_F_SYSCTL_BASE_NAME		= (1ULL << 0),
 };
 
-/* BPF_FUNC_<kernel_obj>_storage_get flags */
+/* BPF_FUNC_sk_storage_get flags */
 enum {
-	BPF_LOCAL_STORAGE_GET_F_CREATE	= (1ULL << 0),
-	/* BPF_SK_STORAGE_GET_F_CREATE is only kept for backward compatibility
-	 * and BPF_LOCAL_STORAGE_GET_F_CREATE must be used instead.
-	 */
-	BPF_SK_STORAGE_GET_F_CREATE  = BPF_LOCAL_STORAGE_GET_F_CREATE,
+	BPF_SK_STORAGE_GET_F_CREATE	= (1ULL << 0),
 };
 
 /* BPF_FUNC_read_branch_records flags. */
 enum {
 	BPF_F_GET_BRANCH_RECORDS_SIZE	= (1ULL << 0),
 };
-
-/* BPF_FUNC_bpf_ringbuf_commit, BPF_FUNC_bpf_ringbuf_discard, and
- * BPF_FUNC_bpf_ringbuf_output flags.
- */
-enum {
-	BPF_RB_NO_WAKEUP		= (1ULL << 0),
-	BPF_RB_FORCE_WAKEUP		= (1ULL << 1),
-};
-
-/* BPF_FUNC_bpf_ringbuf_query flags */
-enum {
-	BPF_RB_AVAIL_DATA = 0,
-	BPF_RB_RING_SIZE = 1,
-	BPF_RB_CONS_POS = 2,
-	BPF_RB_PROD_POS = 3,
-};
-
-/* BPF ring buffer constants */
-enum {
-	BPF_RINGBUF_BUSY_BIT		= (1U << 31),
-	BPF_RINGBUF_DISCARD_BIT		= (1U << 30),
-	BPF_RINGBUF_HDR_SZ		= 8,
-};
-
-/* BPF_FUNC_sk_assign flags in bpf_sk_lookup context. */
-enum {
-	BPF_SK_LOOKUP_F_REPLACE		= (1ULL << 0),
-	BPF_SK_LOOKUP_F_NO_REUSEPORT	= (1ULL << 1),
-};
-
-/* BPF_FUNC_read_branch_records flags. */
-#define BPF_F_GET_BRANCH_RECORDS_SIZE	(1ULL << 0)
 
 /* Mode for BPF_FUNC_skb_adjust_room helper. */
 enum bpf_adj_room_mode {
@@ -3888,51 +3843,8 @@ enum {
 	BPF_SOCK_OPS_RETRANS_CB_FLAG	= (1<<1),
 	BPF_SOCK_OPS_STATE_CB_FLAG	= (1<<2),
 	BPF_SOCK_OPS_RTT_CB_FLAG	= (1<<3),
-	/* Call bpf for all received TCP headers.  The bpf prog will be
-	 * called under sock_ops->op == BPF_SOCK_OPS_PARSE_HDR_OPT_CB
-	 *
-	 * Please refer to the comment in BPF_SOCK_OPS_PARSE_HDR_OPT_CB
-	 * for the header option related helpers that will be useful
-	 * to the bpf programs.
-	 *
-	 * It could be used at the client/active side (i.e. connect() side)
-	 * when the server told it that the server was in syncookie
-	 * mode and required the active side to resend the bpf-written
-	 * options.  The active side can keep writing the bpf-options until
-	 * it received a valid packet from the server side to confirm
-	 * the earlier packet (and options) has been received.  The later
-	 * example patch is using it like this at the active side when the
-	 * server is in syncookie mode.
-	 *
-	 * The bpf prog will usually turn this off in the common cases.
-	 */
-	BPF_SOCK_OPS_PARSE_ALL_HDR_OPT_CB_FLAG	= (1<<4),
-	/* Call bpf when kernel has received a header option that
-	 * the kernel cannot handle.  The bpf prog will be called under
-	 * sock_ops->op == BPF_SOCK_OPS_PARSE_HDR_OPT_CB.
-	 *
-	 * Please refer to the comment in BPF_SOCK_OPS_PARSE_HDR_OPT_CB
-	 * for the header option related helpers that will be useful
-	 * to the bpf programs.
-	 */
-	BPF_SOCK_OPS_PARSE_UNKNOWN_HDR_OPT_CB_FLAG = (1<<5),
-	/* Call bpf when the kernel is writing header options for the
-	 * outgoing packet.  The bpf prog will first be called
-	 * to reserve space in a skb under
-	 * sock_ops->op == BPF_SOCK_OPS_HDR_OPT_LEN_CB.  Then
-	 * the bpf prog will be called to write the header option(s)
-	 * under sock_ops->op == BPF_SOCK_OPS_WRITE_HDR_OPT_CB.
-	 *
-	 * Please refer to the comment in BPF_SOCK_OPS_HDR_OPT_LEN_CB
-	 * and BPF_SOCK_OPS_WRITE_HDR_OPT_CB for the header option
-	 * related helpers that will be useful to the bpf programs.
-	 *
-	 * The kernel gets its chance to reserve space and write
-	 * options first before the BPF program does.
-	 */
-	BPF_SOCK_OPS_WRITE_HDR_OPT_CB_FLAG = (1<<6),
 /* Mask of all currently supported cb flags */
-	BPF_SOCK_OPS_ALL_CB_FLAGS       = 0x7F,
+	BPF_SOCK_OPS_ALL_CB_FLAGS       = 0xF,
 };
 
 /* List of known BPF sock_ops operators.
@@ -4075,63 +3987,6 @@ enum {
 enum {
 	TCP_BPF_IW		= 1001,	/* Set TCP initial congestion window */
 	TCP_BPF_SNDCWND_CLAMP	= 1002,	/* Set sndcwnd_clamp */
-	TCP_BPF_DELACK_MAX	= 1003, /* Max delay ack in usecs */
-	TCP_BPF_RTO_MIN		= 1004, /* Min delay ack in usecs */
-	/* Copy the SYN pkt to optval
-	 *
-	 * BPF_PROG_TYPE_SOCK_OPS only.  It is similar to the
-	 * bpf_getsockopt(TCP_SAVED_SYN) but it does not limit
-	 * to only getting from the saved_syn.  It can either get the
-	 * syn packet from:
-	 *
-	 * 1. the just-received SYN packet (only available when writing the
-	 *    SYNACK).  It will be useful when it is not necessary to
-	 *    save the SYN packet for latter use.  It is also the only way
-	 *    to get the SYN during syncookie mode because the syn
-	 *    packet cannot be saved during syncookie.
-	 *
-	 * OR
-	 *
-	 * 2. the earlier saved syn which was done by
-	 *    bpf_setsockopt(TCP_SAVE_SYN).
-	 *
-	 * The bpf_getsockopt(TCP_BPF_SYN*) option will hide where the
-	 * SYN packet is obtained.
-	 *
-	 * If the bpf-prog does not need the IP[46] header,  the
-	 * bpf-prog can avoid parsing the IP header by using
-	 * TCP_BPF_SYN.  Otherwise, the bpf-prog can get both
-	 * IP[46] and TCP header by using TCP_BPF_SYN_IP.
-	 *
-	 *      >0: Total number of bytes copied
-	 * -ENOSPC: Not enough space in optval. Only optlen number of
-	 *          bytes is copied.
-	 * -ENOENT: The SYN skb is not available now and the earlier SYN pkt
-	 *	    is not saved by setsockopt(TCP_SAVE_SYN).
-	 */
-	TCP_BPF_SYN		= 1005, /* Copy the TCP header */
-	TCP_BPF_SYN_IP		= 1006, /* Copy the IP[46] and TCP header */
-	TCP_BPF_SYN_MAC         = 1007, /* Copy the MAC, IP[46], and TCP header */
-};
-
-enum {
-	BPF_LOAD_HDR_OPT_TCP_SYN = (1ULL << 0),
-};
-
-/* args[0] value during BPF_SOCK_OPS_HDR_OPT_LEN_CB and
- * BPF_SOCK_OPS_WRITE_HDR_OPT_CB.
- */
-enum {
-	BPF_WRITE_HDR_TCP_CURRENT_MSS = 1,	/* Kernel is finding the
-						 * total option spaces
-						 * required for an established
-						 * sk in order to calculate the
-						 * MSS.  No skb is actually
-						 * sent.
-						 */
-	BPF_WRITE_HDR_TCP_SYNACK_COOKIE = 2,	/* Kernel is in syncookie mode
-						 * when sending a SYN.
-						 */
 };
 
 struct bpf_perf_event_value {
