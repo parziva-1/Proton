@@ -38,6 +38,9 @@ static void *bpf_any_get(void *raw, enum bpf_type type)
 	case BPF_TYPE_MAP:
 		bpf_map_inc_with_uref(raw);
 		break;
+	case BPF_TYPE_LINK:
+		bpf_link_inc(raw);
+		break;
 	default:
 		WARN_ON_ONCE(1);
 		break;
@@ -358,11 +361,8 @@ static int bpf_mkmap(struct dentry *dentry, umode_t mode, void *arg)
 
 static int bpf_mklink(struct dentry *dentry, umode_t mode, void *arg)
 {
-	struct bpf_link *link = arg;
-
 	return bpf_mkobj_ops(dentry, mode, arg, &bpf_link_iops,
-			     bpf_link_is_iter(link) ?
-			     &bpf_iter_fops : &bpffs_obj_fops);
+			     &bpffs_obj_fops);
 }
 
 static struct dentry *
@@ -522,7 +522,7 @@ int bpf_obj_get_user(const char __user *pathname, int flags)
 	else if (type == BPF_TYPE_MAP)
 		ret = bpf_map_new_fd(raw, f_flags);
 	else if (type == BPF_TYPE_LINK)
-		ret = (f_flags != O_RDWR) ? -EINVAL : bpf_link_new_fd(raw);
+		ret = bpf_link_new_fd(raw);
 	else
 		return -ENOENT;
 

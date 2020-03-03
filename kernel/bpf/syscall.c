@@ -2246,87 +2246,19 @@ static int bpf_obj_get(const union bpf_attr *attr)
 				attr->file_flags);
 }
 
-static int bpf_tracing_prog_release(struct inode *inode, struct file *filp)
-{
-	struct bpf_prog *prog = filp->private_data;
-
-	WARN_ON_ONCE(bpf_trampoline_unlink_prog(prog));
-	bpf_prog_put(prog);
-	return 0;
-}
-
-static const struct file_operations bpf_tracing_prog_fops = {
-	.release	= bpf_tracing_prog_release,
-	.read		= bpf_dummy_read,
-	.write		= bpf_dummy_write,
-};
-
-static int bpf_tracing_prog_attach(struct bpf_prog *prog)
-{
-	int tr_fd, err;
-
-	if (prog->expected_attach_type != BPF_TRACE_FENTRY &&
-	    prog->expected_attach_type != BPF_TRACE_FEXIT &&
-	    prog->type != BPF_PROG_TYPE_EXT) {
-		err = -EINVAL;
-		goto out_put_prog;
-	}
-
-	err = bpf_trampoline_link_prog(prog);
-	if (err)
-		goto out_put_prog;
-
-	tr_fd = anon_inode_getfd("bpf-tracing-prog", &bpf_tracing_prog_fops,
-				 prog, O_CLOEXEC);
-	if (tr_fd < 0) {
-		WARN_ON_ONCE(bpf_trampoline_unlink_prog(prog));
-		err = tr_fd;
-		goto out_put_prog;
-	}
-	return tr_fd;
-
-out_put_prog:
-	bpf_prog_put(prog);
-	return err;
-}
-
-struct bpf_raw_tracepoint {
-	struct bpf_raw_event_map *btp;
+struct bpf_link {
+	atomic64_t refcnt;
+	const struct bpf_link_ops *ops;
 	struct bpf_prog *prog;
+	struct work_struct work;
 };
 
-static int bpf_raw_tracepoint_release(struct inode *inode, struct file *filp)
+void bpf_link_init(struct bpf_link *link, const struct bpf_link_ops *ops,
+		   struct bpf_prog *prog)
 {
 	atomic64_set(&link->refcnt, 1);
-	link->type = type;
-	link->id = 0;
 	link->ops = ops;
 	link->prog = prog;
-}
-
-static void bpf_link_free_id(int id)
-{
-	if (!id)
-		return;
-
-	spin_lock_bh(&link_idr_lock);
-	idr_remove(&link_idr, id);
-	spin_unlock_bh(&link_idr_lock);
-}
-
-/* Clean up bpf_link and corresponding anon_inode file and FD. After
- * anon_inode is created, bpf_link can't be just kfree()'d due to deferred
- * anon_inode's release() call. This helper marksbpf_link as
- * defunct, releases anon_inode file and puts reserved FD. bpf_prog's refcnt
- * is not decremented, it's the responsibility of a calling code that failed
- * to complete bpf_link initialization.
- */
-void bpf_link_cleanup(struct bpf_link_primer *primer)
-{
-	primer->link->prog = NULL;
-	bpf_link_free_id(primer->id);
-	fput(primer->file);
-	put_unused_fd(primer->fd);
 }
 
 void bpf_link_inc(struct bpf_link *link)
@@ -2337,14 +2269,14 @@ void bpf_link_inc(struct bpf_link *link)
 /* bpf_link_free is guaranteed to be called from process context */
 static void bpf_link_free(struct bpf_link *link)
 {
-	bpf_link_free_id(link->id);
-	if (link->prog) {
-		/* detach BPF program, clean up used resources */
-		link->ops->release(link);
-		bpf_prog_put(link->prog);
-	}
-	/* free bpf_link and its containing memory */
-	link->ops->dealloc(link);
+	struct bpf_prog *prog;
+
+	/* remember prog locally, because release below will free link memory */
+	prog = link->prog;
+	/* extra clean up and kfree of container link struct */
+	link->ops->release(link);
+	/* no more accesing of link members after this point */
+	bpf_prog_put(prog);
 }
 
 static void bpf_link_put_deferred(struct work_struct *work)
@@ -2379,50 +2311,140 @@ static int bpf_link_release(struct inode *inode, struct file *filp)
 }
 
 #ifdef CONFIG_PROC_FS
-#define BPF_PROG_TYPE(_id, _name, prog_ctx_type, kern_ctx_type)
-#define BPF_MAP_TYPE(_id, _ops)
-#define BPF_LINK_TYPE(_id, _name) [_id] = #_name,
-static const char *bpf_link_type_strs[] = {
-	[BPF_LINK_TYPE_UNSPEC] = "<invalid>",
-#include <linux/bpf_types.h>
-};
-#undef BPF_PROG_TYPE
-#undef BPF_MAP_TYPE
-#undef BPF_LINK_TYPE
+static const struct bpf_link_ops bpf_raw_tp_lops;
+static const struct bpf_link_ops bpf_tracing_link_lops;
+static const struct bpf_link_ops bpf_xdp_link_lops;
 
 static void bpf_link_show_fdinfo(struct seq_file *m, struct file *filp)
 {
 	const struct bpf_link *link = filp->private_data;
 	const struct bpf_prog *prog = link->prog;
-	enum bpf_link_type type = link->type;
 	char prog_tag[sizeof(prog->tag) * 2 + 1] = { };
+	const char *link_type;
 
-	if (type < ARRAY_SIZE(bpf_link_type_strs) && bpf_link_type_strs[type]) {
-		seq_printf(m, "link_type:\t%s\n", bpf_link_type_strs[type]);
-	} else {
-		WARN_ONCE(1, "missing BPF_LINK_TYPE(...) for link type %u\n", type);
-		seq_printf(m, "link_type:\t<%u>\n", type);
-	}
-	seq_printf(m, "link_id:\t%u\n", link->id);
+	if (link->ops == &bpf_raw_tp_lops)
+		link_type = "raw_tracepoint";
+	else if (link->ops == &bpf_tracing_link_lops)
+		link_type = "tracing";
+	else
+		link_type = "unknown";
 
 	bin2hex(prog_tag, prog->tag, sizeof(prog->tag));
 	seq_printf(m,
+		   "link_type:\t%s\n"
 		   "prog_tag:\t%s\n"
 		   "prog_id:\t%u\n",
+		   link_type,
 		   prog_tag,
 		   prog->aux->id);
-	if (link->ops->show_fdinfo)
-		link->ops->show_fdinfo(link, m);
 }
 #endif
 
-static const struct file_operations bpf_link_fops = {
+const struct file_operations bpf_link_fops = {
 #ifdef CONFIG_PROC_FS
 	.show_fdinfo	= bpf_link_show_fdinfo,
 #endif
 	.release	= bpf_link_release,
 	.read		= bpf_dummy_read,
 	.write		= bpf_dummy_write,
+};
+
+int bpf_link_new_fd(struct bpf_link *link)
+{
+	return anon_inode_getfd("bpf-link", &bpf_link_fops, link, O_CLOEXEC);
+}
+
+struct bpf_link *bpf_link_get_from_fd(u32 ufd)
+{
+	struct fd f = fdget(ufd);
+	struct bpf_link *link;
+
+	if (!f.file)
+		return ERR_PTR(-EBADF);
+	if (f.file->f_op != &bpf_link_fops) {
+		fdput(f);
+		return ERR_PTR(-EINVAL);
+	}
+
+	link = f.file->private_data;
+	bpf_link_inc(link);
+	fdput(f);
+
+	return link;
+}
+
+struct bpf_tracing_link {
+	struct bpf_link link;
+};
+
+static void bpf_tracing_link_release(struct bpf_link *link)
+{
+	struct bpf_tracing_link *tr_link =
+		container_of(link, struct bpf_tracing_link, link);
+
+	WARN_ON_ONCE(bpf_trampoline_unlink_prog(link->prog));
+	kfree(tr_link);
+}
+
+static const struct bpf_link_ops bpf_tracing_link_lops = {
+	.release = bpf_tracing_link_release,
+};
+
+static int bpf_tracing_prog_attach(struct bpf_prog *prog)
+{
+	struct bpf_tracing_link *link;
+	int link_fd, err;
+
+	if (prog->expected_attach_type != BPF_TRACE_FENTRY &&
+	    prog->expected_attach_type != BPF_TRACE_FEXIT &&
+	    prog->type != BPF_PROG_TYPE_EXT) {
+		err = -EINVAL;
+		goto out_put_prog;
+	}
+
+	link = kzalloc(sizeof(*link), GFP_USER);
+	if (!link) {
+		err = -ENOMEM;
+		goto out_put_prog;
+	}
+	bpf_link_init(&link->link, &bpf_tracing_link_lops, prog);
+
+	err = bpf_trampoline_link_prog(prog);
+	if (err)
+		goto out_free_link;
+
+	link_fd = bpf_link_new_fd(&link->link);
+	if (link_fd < 0) {
+		WARN_ON_ONCE(bpf_trampoline_unlink_prog(prog));
+		err = link_fd;
+		goto out_free_link;
+	}
+	return link_fd;
+
+out_free_link:
+	kfree(link);
+out_put_prog:
+	bpf_prog_put(prog);
+	return err;
+}
+
+struct bpf_raw_tp_link {
+	struct bpf_link link;
+	struct bpf_raw_event_map *btp;
+};
+
+static void bpf_raw_tp_link_release(struct bpf_link *link)
+{
+	struct bpf_raw_tp_link *raw_tp =
+		container_of(link, struct bpf_raw_tp_link, link);
+
+	bpf_probe_unregister(raw_tp->btp, raw_tp->link.prog);
+	bpf_put_raw_tracepoint(raw_tp->btp);
+	kfree(raw_tp);
+}
+
+static const struct bpf_link_ops bpf_raw_tp_lops = {
+	.release = bpf_raw_tp_link_release,
 };
 
 static int bpf_link_alloc_id(struct bpf_link *link)
@@ -2819,13 +2841,12 @@ static const struct bpf_link_ops bpf_raw_tp_link_lops = {
 
 static int bpf_raw_tracepoint_open(const union bpf_attr *attr)
 {
-	struct bpf_link_primer link_primer;
-	struct bpf_raw_tp_link *link;
+	struct bpf_raw_tp_link *raw_tp;
 	struct bpf_raw_event_map *btp;
 	struct bpf_prog *prog;
 	const char *tp_name;
 	char buf[128];
-	int tp_fd, err;
+	int link_fd, err;
 
 	if (CHECK_ATTR(BPF_RAW_TRACEPOINT_OPEN))
 		return -EINVAL;
@@ -2877,20 +2898,20 @@ static int bpf_raw_tracepoint_open(const union bpf_attr *attr)
 		err = -ENOMEM;
 		goto out_put_btp;
 	}
+	bpf_link_init(&raw_tp->link, &bpf_raw_tp_lops, prog);
 	raw_tp->btp = btp;
-	raw_tp->prog = prog;
 
 	err = bpf_probe_register(raw_tp->btp, prog);
 	if (err)
 		goto out_free_tp;
 
-	tp_fd = anon_inode_getfd("bpf-raw-tracepoint", &bpf_raw_tp_fops, raw_tp,
-				 O_CLOEXEC);
-	if (tp_fd < 0) {
+	link_fd = bpf_link_new_fd(&raw_tp->link);
+	if (link_fd < 0) {
 		bpf_probe_unregister(raw_tp->btp, prog);
-		err = tp_fd;
+		err = link_fd;
 		goto out_free_tp;
 	}
+	return link_fd;
 
 out_free_tp:
 	kfree(raw_tp);
@@ -3883,7 +3904,7 @@ static int bpf_task_fd_query(const union bpf_attr *attr,
 	if (file->f_op == &bpf_link_fops) {
 		struct bpf_link *link = file->private_data;
 
-		if (link->ops == &bpf_raw_tp_link_lops) {
+		if (link->ops == &bpf_raw_tp_lops) {
 			struct bpf_raw_tp_link *raw_tp =
 				container_of(link, struct bpf_raw_tp_link, link);
 			struct bpf_raw_event_map *btp = raw_tp->btp;
