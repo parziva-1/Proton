@@ -230,15 +230,7 @@ static void *bpf_test_init(const union bpf_attr *kattr, u32 size,
 		kfree(data);
 		return ERR_PTR(-EFAULT);
 	}
-	if (bpf_fentry_test1(1) != 2 ||
-	    bpf_fentry_test2(2, 3) != 5 ||
-	    bpf_fentry_test3(4, 5, 6) != 15 ||
-	    bpf_fentry_test4((void *)7, 8, 9, 10) != 34 ||
-	    bpf_fentry_test5(11, (void *)12, 13, 14, 15) != 65 ||
-	    bpf_fentry_test6(16, (void *)17, 18, 19, (void *)20, 21) != 111) {
-		kfree(data);
-		return ERR_PTR(-EFAULT);
-	}
+
 	return data;
 }
 
@@ -246,13 +238,7 @@ int bpf_prog_test_run_tracing(struct bpf_prog *prog,
 			      const union bpf_attr *kattr,
 			      union bpf_attr __user *uattr)
 {
-	struct bpf_fentry_test_t arg = {};
-	u16 side_effect = 0, ret = 0;
-	int b = 2, err = -EFAULT;
-	u32 retval = 0;
-
-	if (kattr->test.flags || kattr->test.cpu)
-		return -EINVAL;
+	int err = -EFAULT;
 
 	switch (prog->expected_attach_type) {
 	case BPF_TRACE_FENTRY:
@@ -262,106 +248,16 @@ int bpf_prog_test_run_tracing(struct bpf_prog *prog,
 		    bpf_fentry_test3(4, 5, 6) != 15 ||
 		    bpf_fentry_test4((void *)7, 8, 9, 10) != 34 ||
 		    bpf_fentry_test5(11, (void *)12, 13, 14, 15) != 65 ||
-		    bpf_fentry_test6(16, (void *)17, 18, 19, (void *)20, 21) != 111 ||
-		    bpf_fentry_test7((struct bpf_fentry_test_t *)0) != 0 ||
-		    bpf_fentry_test8(&arg) != 0)
+		    bpf_fentry_test6(16, (void *)17, 18, 19, (void *)20, 21) != 111)
 			goto out;
-		break;
-	case BPF_MODIFY_RETURN:
-		ret = bpf_modify_return_test(1, &b);
-		if (b != 2)
-			side_effect = 1;
 		break;
 	default:
 		goto out;
 	}
 
-	retval = ((u32)side_effect << 16) | ret;
-	if (copy_to_user(&uattr->test.retval, &retval, sizeof(retval)))
-		goto out;
-
 	err = 0;
 out:
 	trace_bpf_test_finish(&err);
-	return err;
-}
-
-struct bpf_raw_tp_test_run_info {
-	struct bpf_prog *prog;
-	void *ctx;
-	u32 retval;
-};
-
-static void
-__bpf_prog_test_run_raw_tp(void *data)
-{
-	struct bpf_raw_tp_test_run_info *info = data;
-
-	rcu_read_lock();
-	info->retval = BPF_PROG_RUN(info->prog, info->ctx);
-	rcu_read_unlock();
-}
-
-int bpf_prog_test_run_raw_tp(struct bpf_prog *prog,
-			     const union bpf_attr *kattr,
-			     union bpf_attr __user *uattr)
-{
-	void __user *ctx_in = u64_to_user_ptr(kattr->test.ctx_in);
-	__u32 ctx_size_in = kattr->test.ctx_size_in;
-	struct bpf_raw_tp_test_run_info info;
-	int cpu = kattr->test.cpu, err = 0;
-	int current_cpu;
-
-	/* doesn't support data_in/out, ctx_out, duration, or repeat */
-	if (kattr->test.data_in || kattr->test.data_out ||
-	    kattr->test.ctx_out || kattr->test.duration ||
-	    kattr->test.repeat)
-		return -EINVAL;
-
-	if (ctx_size_in < prog->aux->max_ctx_offset ||
-	    ctx_size_in > MAX_BPF_FUNC_ARGS * sizeof(u64))
-		return -EINVAL;
-
-	if ((kattr->test.flags & BPF_F_TEST_RUN_ON_CPU) == 0 && cpu != 0)
-		return -EINVAL;
-
-	if (ctx_size_in) {
-		info.ctx = kzalloc(ctx_size_in, GFP_USER);
-		if (!info.ctx)
-			return -ENOMEM;
-		if (copy_from_user(info.ctx, ctx_in, ctx_size_in)) {
-			err = -EFAULT;
-			goto out;
-		}
-	} else {
-		info.ctx = NULL;
-	}
-
-	info.prog = prog;
-
-	current_cpu = get_cpu();
-	if ((kattr->test.flags & BPF_F_TEST_RUN_ON_CPU) == 0 ||
-	    cpu == current_cpu) {
-		__bpf_prog_test_run_raw_tp(&info);
-	} else if (cpu >= nr_cpu_ids || !cpu_online(cpu)) {
-		/* smp_call_function_single() also checks cpu_online()
-		 * after csd_lock(). However, since cpu is from user
-		 * space, let's do an extra quick check to filter out
-		 * invalid value before smp_call_function_single().
-		 */
-		err = -ENXIO;
-	} else {
-		err = smp_call_function_single(cpu, __bpf_prog_test_run_raw_tp,
-					       &info, 1);
-	}
-	put_cpu();
-
-	if (!err &&
-	    copy_to_user(&uattr->test.retval, &info.retval, sizeof(u32)))
-		err = -EFAULT;
-
-out:
-	kfree(info.ctx);
 	return err;
 }
 
