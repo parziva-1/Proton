@@ -3057,6 +3057,19 @@ union bpf_attr {
  *		of sizeof(struct perf_branch_entry).
  *
  *		**-ENOENT** if architecture does not support branch records.
+ *
+ * int bpf_get_ns_current_pid_tgid(u64 dev, u64 ino, struct bpf_pidns_info *nsdata, u32 size)
+ *	Description
+ *		Returns 0 on success, values for *pid* and *tgid* as seen from the current
+ *		*namespace* will be returned in *nsdata*.
+ *
+ *		On failure, the returned value is one of the following:
+ *
+ *		**-EINVAL** if dev and inum supplied don't match dev_t and inode number
+ *              with nsfs of current task, or if dev conversion to dev_t lost high bits.
+ *
+ *		**-ENOENT** if pidns does not exists for the current task.
+ *
  */
 #define __BPF_FUNC_MAPPER(FN)		\
 	FN(unspec),			\
@@ -4180,49 +4193,4 @@ struct bpf_pidns_info {
 	__u32 pid;
 	__u32 tgid;
 };
-
-/* User accessible data for SK_LOOKUP programs. Add new fields at the end. */
-struct bpf_sk_lookup {
-	__bpf_md_ptr(struct bpf_sock *, sk); /* Selected socket */
-
-	__u32 family;		/* Protocol family (AF_INET, AF_INET6) */
-	__u32 protocol;		/* IP protocol (IPPROTO_TCP, IPPROTO_UDP) */
-	__u32 remote_ip4;	/* Network byte order */
-	__u32 remote_ip6[4];	/* Network byte order */
-	__u32 remote_port;	/* Network byte order */
-	__u32 local_ip4;	/* Network byte order */
-	__u32 local_ip6[4];	/* Network byte order */
-	__u32 local_port;	/* Host byte order */
-};
-
-/*
- * struct btf_ptr is used for typed pointer representation; the
- * type id is used to render the pointer data as the appropriate type
- * via the bpf_snprintf_btf() helper described above.  A flags field -
- * potentially to specify additional details about the BTF pointer
- * (rather than its mode of display) - is included for future use.
- * Display flags - BTF_F_* - are passed to bpf_snprintf_btf separately.
- */
-struct btf_ptr {
-	void *ptr;
-	__u32 type_id;
-	__u32 flags;		/* BTF ptr flags; unused at present. */
-};
-
-/*
- * Flags to control bpf_snprintf_btf() behaviour.
- *     - BTF_F_COMPACT: no formatting around type information
- *     - BTF_F_NONAME: no struct/union member names/types
- *     - BTF_F_PTR_RAW: show raw (unobfuscated) pointer values;
- *       equivalent to %px.
- *     - BTF_F_ZERO: show zero-valued struct/union members; they
- *       are not displayed by default
- */
-enum {
-	BTF_F_COMPACT	=	(1ULL << 0),
-	BTF_F_NONAME	=	(1ULL << 1),
-	BTF_F_PTR_RAW	=	(1ULL << 2),
-	BTF_F_ZERO	=	(1ULL << 3),
-};
-
 #endif /* _UAPI__LINUX_BPF_H__ */
