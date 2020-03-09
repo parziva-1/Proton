@@ -616,20 +616,6 @@ static void tcp_bpf_update_sk_prot(struct sock *sk, struct sk_psock *psock)
 	sk_psock_update_proto(sk, psock, &tcp_bpf_prots[family][config]);
 }
 
-static void tcp_bpf_reinit_sk_prot(struct sock *sk, struct sk_psock *psock)
-{
-	int family = sk->sk_family == AF_INET6 ? TCP_BPF_IPV6 : TCP_BPF_IPV4;
-	int config = psock->progs.msg_parser   ? TCP_BPF_TX   : TCP_BPF_BASE;
-
-	/* Reinit occurs when program types change e.g. TCP_BPF_TX is removed
-	 * or added requiring sk_prot hook updates. We keep original saved
-	 * hooks in this case.
-	 *
-	 * Pairs with lockless read in sk_clone_lock().
-	 */
-	WRITE_ONCE(sk->sk_prot, &tcp_bpf_prots[family][config]);
-}
-
 static int tcp_bpf_assert_proto_ops(struct proto *ops)
 {
 	/* In order to avoid retpoline, we make assumptions when we call
@@ -650,7 +636,25 @@ struct proto *tcp_bpf_get_proto(struct sock *sk, struct sk_psock *psock)
 		if (tcp_bpf_assert_proto_ops(psock->sk_proto))
 			return ERR_PTR(-EINVAL);
 
-		tcp_bpf_check_v6_needs_rebuild(psock->sk_proto);
+	rcu_read_lock();
+	psock = sk_psock(sk);
+	tcp_bpf_update_sk_prot(sk, psock);
+	rcu_read_unlock();
+}
+
+int tcp_bpf_init(struct sock *sk)
+{
+	struct proto *ops = READ_ONCE(sk->sk_prot);
+	struct sk_psock *psock;
+
+	sock_owned_by_me(sk);
+
+	rcu_read_lock();
+	psock = sk_psock(sk);
+	if (unlikely(!psock || psock->sk_proto ||
+		     tcp_bpf_assert_proto_ops(ops))) {
+		rcu_read_unlock();
+		return -EINVAL;
 	}
 
 	return &tcp_bpf_prots[family][config];
