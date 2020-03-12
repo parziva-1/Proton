@@ -590,10 +590,7 @@ bpf_prog_ksym_set_name(struct bpf_prog *prog)
 
 static unsigned long bpf_get_ksym_start(struct latch_tree_node *n)
 {
-	const struct bpf_prog_aux *aux;
-
-	aux = container_of(n, struct bpf_prog_aux, ksym_tnode);
-	return aux->ksym.start;
+	return container_of(n, struct bpf_ksym, tnode)->start;
 }
 
 static __always_inline bool bpf_tree_less(struct latch_tree_node *a,
@@ -605,13 +602,13 @@ static __always_inline bool bpf_tree_less(struct latch_tree_node *a,
 static __always_inline int bpf_tree_comp(void *key, struct latch_tree_node *n)
 {
 	unsigned long val = (unsigned long)key;
-	const struct bpf_prog_aux *aux;
+	const struct bpf_ksym *ksym;
 
-	aux = container_of(n, struct bpf_prog_aux, ksym_tnode);
+	ksym = container_of(n, struct bpf_ksym, tnode);
 
-	if (val < aux->ksym.start)
+	if (val < ksym->start)
 		return -1;
-	if (val >= aux->ksym.end)
+	if (val >= ksym->end)
 		return  1;
 
 	return 0;
@@ -630,7 +627,7 @@ void bpf_ksym_add(struct bpf_ksym *ksym)
 {
 	WARN_ON_ONCE(!list_empty(&aux->ksym.lnode));
 	list_add_tail_rcu(&aux->ksym.lnode, &bpf_kallsyms);
-	latch_tree_insert(&aux->ksym_tnode, &bpf_tree, &bpf_tree_ops);
+	latch_tree_insert(&aux->ksym.tnode, &bpf_tree, &bpf_tree_ops);
 }
 
 static void __bpf_ksym_del(struct bpf_ksym *ksym)
@@ -638,7 +635,7 @@ static void __bpf_ksym_del(struct bpf_ksym *ksym)
 	if (list_empty(&aux->ksym.lnode))
 		return;
 
-	latch_tree_erase(&aux->ksym_tnode, &bpf_tree, &bpf_tree_ops);
+	latch_tree_erase(&aux->ksym.tnode, &bpf_tree, &bpf_tree_ops);
 	list_del_rcu(&aux->ksym.lnode);
 }
 
@@ -680,7 +677,9 @@ static struct bpf_ksym *bpf_ksym_find(unsigned long addr)
 	struct latch_tree_node *n;
 
 	n = latch_tree_find((void *)addr, &bpf_tree, &bpf_tree_ops);
-	return n ? container_of(n, struct bpf_ksym, tnode) : NULL;
+	return n ?
+	       container_of(n, struct bpf_prog_aux, ksym.tnode)->prog :
+	       NULL;
 }
 
 const char *__bpf_address_lookup(unsigned long addr, unsigned long *size,
