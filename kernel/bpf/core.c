@@ -592,7 +592,10 @@ bpf_prog_ksym_set_name(struct bpf_prog *prog)
 
 static unsigned long bpf_get_ksym_start(struct latch_tree_node *n)
 {
-	return container_of(n, struct bpf_ksym, tnode)->start;
+	const struct bpf_prog_aux *aux;
+
+	aux = container_of(n, struct bpf_prog_aux, ksym_tnode);
+	return aux->ksym.start;
 }
 
 static __always_inline bool bpf_tree_less(struct latch_tree_node *a,
@@ -604,17 +607,13 @@ static __always_inline bool bpf_tree_less(struct latch_tree_node *a,
 static __always_inline int bpf_tree_comp(void *key, struct latch_tree_node *n)
 {
 	unsigned long val = (unsigned long)key;
-	const struct bpf_ksym *ksym;
+	const struct bpf_prog_aux *aux;
 
-	ksym = container_of(n, struct bpf_ksym, tnode);
+	aux = container_of(n, struct bpf_prog_aux, ksym_tnode);
 
-	if (val < ksym->start)
+	if (val < aux->ksym.start)
 		return -1;
-	/* Ensure that we detect return addresses as part of the program, when
-	 * the final instruction is a call for a program part of the stack
-	 * trace. Therefore, do val > ksym->end instead of val >= ksym->end.
-	 */
-	if (val > ksym->end)
+	if (val >= aux->ksym.end)
 		return  1;
 
 	return 0;
@@ -672,10 +671,10 @@ void bpf_prog_kallsyms_add(struct bpf_prog *fp)
 		return;
 
 	bpf_prog_ksym_set_addr(fp);
-	bpf_prog_ksym_set_name(fp);
-	fp->aux->ksym.prog = true;
 
-	bpf_ksym_add(&fp->aux->ksym);
+	spin_lock_bh(&bpf_lock);
+	bpf_prog_ksym_node_add(fp->aux);
+	spin_unlock_bh(&bpf_lock);
 }
 
 void bpf_prog_kallsyms_del(struct bpf_prog *fp)
@@ -697,16 +696,16 @@ static struct bpf_ksym *bpf_ksym_find(unsigned long addr)
 const char *__bpf_address_lookup(unsigned long addr, unsigned long *size,
 				 unsigned long *off, char *sym)
 {
-	struct bpf_ksym *ksym;
+	struct bpf_prog *prog;
 	char *ret = NULL;
 
 	rcu_read_lock();
-	ksym = bpf_ksym_find(addr);
-	if (ksym) {
-		unsigned long symbol_start = ksym->start;
-		unsigned long symbol_end = ksym->end;
+	prog = bpf_prog_kallsyms_find(addr);
+	if (prog) {
+		unsigned long symbol_start = prog->aux->ksym.start;
+		unsigned long symbol_end = prog->aux->ksym.end;
 
-		strncpy(sym, ksym->name, KSYM_NAME_LEN);
+		bpf_get_prog_name(prog, sym);
 
 		ret = sym;
 		if (size)
