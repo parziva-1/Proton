@@ -107,8 +107,6 @@ struct bpf_prog *bpf_prog_alloc_no_stats(unsigned int size, gfp_t gfp_extra_flag
 	fp->jit_requested = ebpf_jit_enabled();
 
 	INIT_LIST_HEAD_RCU(&fp->aux->ksym.lnode);
-	mutex_init(&fp->aux->used_maps_mutex);
-	mutex_init(&fp->aux->dst_mutex);
 
 	return fp;
 }
@@ -630,27 +628,18 @@ static struct latch_tree_root bpf_tree __cacheline_aligned;
 
 void bpf_ksym_add(struct bpf_ksym *ksym)
 {
-	spin_lock_bh(&bpf_lock);
-	WARN_ON_ONCE(!list_empty(&ksym->lnode));
-	list_add_tail_rcu(&ksym->lnode, &bpf_kallsyms);
-	latch_tree_insert(&ksym->tnode, &bpf_tree, &bpf_tree_ops);
-	spin_unlock_bh(&bpf_lock);
+	WARN_ON_ONCE(!list_empty(&aux->ksym.lnode));
+	list_add_tail_rcu(&aux->ksym.lnode, &bpf_kallsyms);
+	latch_tree_insert(&aux->ksym_tnode, &bpf_tree, &bpf_tree_ops);
 }
 
 static void __bpf_ksym_del(struct bpf_ksym *ksym)
 {
-	if (list_empty(&ksym->lnode))
+	if (list_empty(&aux->ksym.lnode))
 		return;
 
-	latch_tree_erase(&ksym->tnode, &bpf_tree, &bpf_tree_ops);
-	list_del_rcu(&ksym->lnode);
-}
-
-void bpf_ksym_del(struct bpf_ksym *ksym)
-{
-	spin_lock_bh(&bpf_lock);
-	__bpf_ksym_del(ksym);
-	spin_unlock_bh(&bpf_lock);
+	latch_tree_erase(&aux->ksym_tnode, &bpf_tree, &bpf_tree_ops);
+	list_del_rcu(&aux->ksym.lnode);
 }
 
 static bool bpf_prog_kallsyms_candidate(const struct bpf_prog *fp)
@@ -763,7 +752,7 @@ int bpf_get_kallsym(unsigned int symnum, unsigned long *value, char *type,
 		if (it++ != symnum)
 			continue;
 
-		strncpy(sym, aux->ksym.name, KSYM_NAME_LEN);
+		strncpy(sym, ksym->name, KSYM_NAME_LEN);
 
 		*value = ksym->start;
 		*type  = BPF_SYM_ELF_TYPE;
