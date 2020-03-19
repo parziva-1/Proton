@@ -92,8 +92,7 @@ static const struct veth_q_stat_desc veth_rq_stats_desc[] = {
 	{ "drops",		VETH_RQ_STAT(rx_drops) },
 	{ "xdp_redirect",	VETH_RQ_STAT(xdp_redirect) },
 	{ "xdp_drops",		VETH_RQ_STAT(xdp_drops) },
-	{ "xdp_tx",		VETH_RQ_STAT(xdp_tx) },
-	{ "xdp_tx_errors",	VETH_RQ_STAT(xdp_tx_err) },
+	{ "rx_drops",		VETH_RQ_STAT(rx_drops) },
 };
 
 #define VETH_RQ_STATS_LEN	ARRAY_SIZE(veth_rq_stats_desc)
@@ -347,7 +346,7 @@ static void veth_stats_rx(struct veth_stats *result, struct net_device *dev)
 			start = u64_stats_fetch_begin_irq(&stats->syncp);
 			packets = stats->vs.xdp_packets;
 			bytes = stats->vs.xdp_bytes;
-			drops = stats->vs.xdp_drops;
+			drops = stats->vs.rx_drops;
 		} while (u64_stats_fetch_retry_irq(&stats->syncp, start));
 		result->peer_tq_xdp_xmit_err += peer_tq_xdp_xmit_err;
 		result->xdp_tx_err += xdp_tx_err;
@@ -370,8 +369,7 @@ static void veth_get_stats64(struct net_device *dev,
 	tot->tx_packets = packets;
 
 	veth_stats_rx(&rx, dev);
-	tot->tx_dropped += rx.xdp_tx_err;
-	tot->rx_dropped = rx.rx_drops + rx.peer_tq_xdp_xmit_err;
+	tot->rx_dropped = rx.rx_drops;
 	tot->rx_bytes = rx.xdp_bytes;
 	tot->rx_packets = rx.xdp_packets;
 
@@ -826,7 +824,8 @@ static int veth_xdp_rcv(struct veth_rq *rq, int budget,
 
 	u64_stats_update_begin(&rq->stats.syncp);
 	rq->stats.vs.xdp_bytes += stats->xdp_bytes;
-	rq->stats.vs.xdp_drops += stats->xdp_drops + stats->rx_drops;
+	rq->stats.vs.xdp_drops += stats->xdp_drops;
+	rq->stats.vs.rx_drops += stats->rx_drops;
 	rq->stats.vs.xdp_packets += done;
 	u64_stats_update_end(&rq->stats.syncp);
 
