@@ -37,9 +37,13 @@
 #define VETH_XDP_TX_BULK_SIZE	16
 
 struct veth_stats {
+	u64	rx_drops;
+	/* xdp */
 	u64	xdp_packets;
 	u64	xdp_bytes;
+	u64	xdp_redirect;
 	u64	xdp_drops;
+	u64	xdp_tx;
 };
 
 struct veth_rq_stats {
@@ -821,9 +825,9 @@ static int veth_xdp_rcv(struct veth_rq *rq, int budget,
 	}
 
 	u64_stats_update_begin(&rq->stats.syncp);
+	rq->stats.vs.xdp_bytes += stats->xdp_bytes;
+	rq->stats.vs.xdp_drops += stats->xdp_drops + stats->rx_drops;
 	rq->stats.vs.xdp_packets += done;
-	rq->stats.vs.xdp_bytes += bytes;
-	rq->stats.vs.xdp_drops += drops;
 	u64_stats_update_end(&rq->stats.syncp);
 
 	return done;
@@ -853,9 +857,9 @@ static int veth_poll(struct napi_struct *napi, int budget)
 		}
 	}
 
-	if (xdp_xmit & VETH_XDP_TX)
+	if (stats.xdp_tx > 0)
 		veth_xdp_flush(rq->dev, &bq);
-	if (xdp_xmit & VETH_XDP_REDIR)
+	if (stats.xdp_redirect > 0)
 		xdp_do_flush();
 	xdp_clear_return_frame_no_direct();
 
