@@ -37,34 +37,17 @@ static void bpf_cgroup_storages_free(struct bpf_cgroup_storage *storages[])
 }
 
 static int bpf_cgroup_storages_alloc(struct bpf_cgroup_storage *storages[],
-				     struct bpf_cgroup_storage *new_storages[],
-				     enum bpf_attach_type type,
-				     struct bpf_prog *prog,
-				     struct cgroup *cgrp)
+				     struct bpf_prog *prog)
 {
 	enum bpf_cgroup_storage_type stype;
-	struct bpf_cgroup_storage_key key;
-	struct bpf_map *map;
-
-	key.cgroup_inode_id = cgroup_id(cgrp);
-	key.attach_type = type;
 
 	for_each_cgroup_storage_type(stype) {
-		map = prog->aux->cgroup_storage[stype];
-		if (!map)
-			continue;
-
-		storages[stype] = cgroup_storage_lookup((void *)map, &key, false);
-		if (storages[stype])
-			continue;
-
 		storages[stype] = bpf_cgroup_storage_alloc(prog, stype);
 		if (IS_ERR(storages[stype])) {
-			bpf_cgroup_storages_free(new_storages);
+			storages[stype] = NULL;
+			bpf_cgroup_storages_free(storages);
 			return -ENOMEM;
 		}
-
-		new_storages[stype] = storages[stype];
 	}
 
 	return 0;
@@ -80,7 +63,7 @@ static void bpf_cgroup_storages_assign(struct bpf_cgroup_storage *dst[],
 }
 
 static void bpf_cgroup_storages_link(struct bpf_cgroup_storage *storages[],
-				     struct cgroup *cgrp,
+				     struct cgroup* cgrp,
 				     enum bpf_attach_type attach_type)
 {
 	enum bpf_cgroup_storage_type stype;
@@ -89,15 +72,12 @@ static void bpf_cgroup_storages_link(struct bpf_cgroup_storage *storages[],
 		bpf_cgroup_storage_link(storages[stype], cgrp, attach_type);
 }
 
-/* Called when bpf_cgroup_link is auto-detached from dying cgroup.
- * It drops cgroup and bpf_prog refcounts, and marks bpf_link as defunct. It
- * doesn't free link memory, which will eventually be done by bpf_link's
- * release() callback, when its last FD is closed.
- */
-static void bpf_cgroup_link_auto_detach(struct bpf_cgroup_link *link)
+static void bpf_cgroup_storages_unlink(struct bpf_cgroup_storage *storages[])
 {
-	cgroup_put(link->cgroup);
-	link->cgroup = NULL;
+	enum bpf_cgroup_storage_type stype;
+
+	for_each_cgroup_storage_type(stype)
+		bpf_cgroup_storage_unlink(storages[stype]);
 }
 
 /**
@@ -123,10 +103,9 @@ static void cgroup_bpf_release(struct work_struct *work)
 
 		list_for_each_entry_safe(pl, pltmp, progs, node) {
 			list_del(&pl->node);
-			if (pl->prog)
-				bpf_prog_put(pl->prog);
-			if (pl->link)
-				bpf_cgroup_link_auto_detach(pl->link);
+			bpf_prog_put(pl->prog);
+			bpf_cgroup_storages_unlink(pl->storage);
+			bpf_cgroup_storages_free(pl->storage);
 			kfree(pl);
 			static_branch_dec(&cgroup_bpf_enabled_key);
 		}
@@ -257,7 +236,7 @@ static int compute_effective_progs(struct cgroup *cgrp,
 				continue;
 
 			item = &progs->items[cnt];
-			item->prog = prog_list_prog(pl);
+			item->prog = pl->prog;
 			bpf_cgroup_storages_assign(item->cgroup_storage,
 						   pl->storage);
 			cnt++;
@@ -439,7 +418,6 @@ int __cgroup_bpf_attach(struct cgroup *cgrp, struct bpf_prog *prog,
 	struct bpf_cgroup_storage *storage[MAX_BPF_CGROUP_STORAGE_TYPE] = {};
 	struct bpf_cgroup_storage *old_storage[MAX_BPF_CGROUP_STORAGE_TYPE] = {};
 	struct bpf_prog_list *pl, *replace_pl = NULL;
-	enum bpf_cgroup_storage_type stype;
 	int err;
 
 	if (((flags & BPF_F_ALLOW_OVERRIDE) && (flags & BPF_F_ALLOW_MULTI)) ||
@@ -481,54 +459,46 @@ int __cgroup_bpf_attach(struct cgroup *cgrp, struct bpf_prog *prog,
 		replace_pl = list_first_entry(progs, typeof(*pl), node);
 	}
 
-	for_each_cgroup_storage_type(stype) {
-		storage[stype] = bpf_cgroup_storage_alloc(prog, stype);
-		if (IS_ERR(storage[stype])) {
-			storage[stype] = NULL;
-			for_each_cgroup_storage_type(stype)
-				bpf_cgroup_storage_free(storage[stype]);
-			return -ENOMEM;
-		}
-	}
+	if (bpf_cgroup_storages_alloc(storage, prog))
+		return -ENOMEM;
 
 	if (replace_pl) {
 		pl = replace_pl;
 		old_prog = pl->prog;
-		for_each_cgroup_storage_type(stype) {
-			old_storage[stype] = pl->storage[stype];
-			bpf_cgroup_storage_unlink(old_storage[stype]);
-		}
+		bpf_cgroup_storages_unlink(pl->storage);
+		bpf_cgroup_storages_assign(old_storage, pl->storage);
 	} else {
 		pl = kmalloc(sizeof(*pl), GFP_KERNEL);
 		if (!pl) {
-			bpf_cgroup_storages_free(new_storage);
+			bpf_cgroup_storages_free(storage);
 			return -ENOMEM;
 		}
 		list_add_tail(&pl->node, progs);
 	}
 
 	pl->prog = prog;
-	for_each_cgroup_storage_type(stype)
-		pl->storage[stype] = storage[stype];
-
+	bpf_cgroup_storages_assign(pl->storage, storage);
 	cgrp->bpf.flags[type] = saved_flags;
 
 	err = update_effective_progs(cgrp, type);
 	if (err)
 		goto cleanup;
 
-	if (old_prog)
+	static_branch_inc(&cgroup_bpf_enabled_key);
+	bpf_cgroup_storages_free(old_storage);
+	if (old_prog) {
 		bpf_prog_put(old_prog);
-	else
-		static_branch_inc(&cgroup_bpf_enabled_key);
-	bpf_cgroup_storages_link(new_storage, cgrp, type);
+		static_branch_dec(&cgroup_bpf_enabled_key);
+	}
+	bpf_cgroup_storages_link(storage, cgrp, type);
 	return 0;
 
 cleanup:
-	if (old_prog) {
-		pl->prog = old_prog;
-		pl->link = NULL;
-	}
+	/* and cleanup the prog list */
+	pl->prog = old_prog;
+	bpf_cgroup_storages_free(pl->storage);
+	bpf_cgroup_storages_assign(pl->storage, old_storage);
+	bpf_cgroup_storages_link(pl->storage, cgrp, type);
 	if (!replace_pl) {
 		list_del(&pl->node);
 		kfree(pl);
@@ -594,8 +564,9 @@ static int __cgroup_bpf_replace(struct cgroup *cgrp,
 				struct bpf_cgroup_link *link,
 				struct bpf_prog *new_prog)
 {
-	struct list_head *progs = &cgrp->bpf.progs[link->type];
-	struct bpf_prog *old_prog;
+	struct list_head *progs = &cgrp->bpf.progs[type];
+	u32 flags = cgrp->bpf.flags[type];
+	struct bpf_prog *old_prog = NULL;
 	struct bpf_prog_list *pl;
 	bool found = false;
 
@@ -770,6 +741,8 @@ int __cgroup_bpf_detach(struct cgroup *cgrp, struct bpf_prog *prog,
 
 	/* now can actually delete it from this cgroup list */
 	list_del(&pl->node);
+	bpf_cgroup_storages_unlink(pl->storage);
+	bpf_cgroup_storages_free(pl->storage);
 	kfree(pl);
 	if (list_empty(progs))
 		/* last program was detached, reset flags to zero */
