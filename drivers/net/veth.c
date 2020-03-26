@@ -507,11 +507,11 @@ static int veth_ndo_xdp_xmit(struct net_device *dev, int n,
 	return veth_xdp_xmit(dev, n, frames, flags, true);
 }
 
-static void veth_xdp_flush_bq(struct net_device *dev, struct veth_xdp_tx_bq *bq)
+static void veth_xdp_flush_bq(struct veth_rq *rq, struct veth_xdp_tx_bq *bq)
 {
 	int sent, i, err = 0;
 
-	sent = veth_xdp_xmit(dev, bq->count, bq->q, 0, false);
+	sent = veth_xdp_xmit(rq->dev, bq->count, bq->q, 0, false);
 	if (sent < 0) {
 		err = sent;
 		sent = 0;
@@ -519,11 +519,6 @@ static void veth_xdp_flush_bq(struct net_device *dev, struct veth_xdp_tx_bq *bq)
 			xdp_return_frame(bq->q[i]);
 	}
 	trace_xdp_bulk_tx(rq->dev, sent, bq->count - sent, err);
-
-	u64_stats_update_begin(&rq->stats.syncp);
-	rq->stats.vs.xdp_tx += sent;
-	rq->stats.vs.xdp_tx_err += bq->count - sent;
-	u64_stats_update_end(&rq->stats.syncp);
 
 	bq->count = 0;
 }
@@ -867,7 +862,7 @@ static int veth_poll(struct napi_struct *napi, int budget)
 	}
 
 	if (stats.xdp_tx > 0)
-		veth_xdp_flush(rq->dev, &bq);
+		veth_xdp_flush(rq, &bq);
 	if (stats.xdp_redirect > 0)
 		xdp_do_flush();
 	xdp_clear_return_frame_no_direct();
