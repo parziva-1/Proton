@@ -3087,23 +3087,6 @@ static const struct bpf_func_proto bpf_get_cgroup_classid_curr_proto = {
 	.gpl_only	= false,
 	.ret_type	= RET_INTEGER,
 };
-
-BPF_CALL_1(bpf_skb_cgroup_classid, const struct sk_buff *, skb)
-{
-	struct sock *sk = skb_to_full_sk(skb);
-
-	if (!sk || !sk_fullsock(sk))
-		return 0;
-
-	return sock_cgroup_classid(&sk->sk_cgrp_data);
-}
-
-static const struct bpf_func_proto bpf_skb_cgroup_classid_proto = {
-	.func		= bpf_skb_cgroup_classid,
-	.gpl_only	= false,
-	.ret_type	= RET_INTEGER,
-	.arg1_type	= ARG_PTR_TO_CTX,
-};
 #endif
 
 BPF_CALL_1(bpf_get_cgroup_classid, const struct sk_buff *, skb)
@@ -7067,6 +7050,10 @@ sock_filter_func_proto(enum bpf_func_id func_id, const struct bpf_prog *prog)
 		return &bpf_get_netns_cookie_sock_proto;
 	case BPF_FUNC_perf_event_output:
 		return &bpf_event_output_data_proto;
+#ifdef CONFIG_CGROUP_NET_CLASSID
+	case BPF_FUNC_get_cgroup_classid:
+		return &bpf_get_cgroup_classid_curr_proto;
+#endif
 	default:
 		return bpf_base_func_proto(func_id);
 	}
@@ -7097,6 +7084,10 @@ sock_addr_func_proto(enum bpf_func_id func_id, const struct bpf_prog *prog)
 		return &bpf_get_local_storage_proto;
 	case BPF_FUNC_perf_event_output:
 		return &bpf_event_output_data_proto;
+#ifdef CONFIG_CGROUP_NET_CLASSID
+	case BPF_FUNC_get_cgroup_classid:
+		return &bpf_get_cgroup_classid_curr_proto;
+#endif
 #ifdef CONFIG_INET
 	case BPF_FUNC_sk_lookup_tcp:
 		return &bpf_sock_addr_sk_lookup_tcp_proto;
