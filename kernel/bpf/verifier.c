@@ -4573,25 +4573,34 @@ static int check_func_arg(struct bpf_verifier_env *env, u32 arg,
 	if (arg_type == ARG_PTR_TO_MAP_VALUE ||
 	    arg_type == ARG_PTR_TO_UNINIT_MAP_VALUE ||
 	    arg_type == ARG_PTR_TO_MAP_VALUE_OR_NULL) {
-		err = resolve_map_arg_type(env, meta, &arg_type);
-		if (err)
-			return err;
-	}
-
-	if (register_is_null(reg) && arg_type_may_be_null(arg_type))
-		/* A NULL register has a SCALAR_VALUE type, so skip
-		 * type checking.
-		 */
-		goto skip_type_check;
-
-	err = check_reg_type(env, regno, arg_type, fn->arg_btf_id[arg]);
-	if (err)
-		return err;
-
-	if (type == PTR_TO_CTX) {
-		err = check_ctx_reg(env, reg, regno);
-		if (err < 0)
-			return err;
+		expected_type = PTR_TO_STACK;
+		if (register_is_null(reg) &&
+		    arg_type == ARG_PTR_TO_MAP_VALUE_OR_NULL)
+			/* final test in check_stack_boundary() */;
+		else if (!type_is_pkt_pointer(type) &&
+			 type != PTR_TO_MAP_VALUE &&
+			 type != expected_type)
+			goto err_type;
+	} else if (arg_type == ARG_CONST_SIZE ||
+		   arg_type == ARG_CONST_SIZE_OR_ZERO) {
+		expected_type = SCALAR_VALUE;
+		if (type != expected_type)
+			goto err_type;
+	} else if (arg_type == ARG_CONST_MAP_PTR) {
+		expected_type = CONST_PTR_TO_MAP;
+		if (type != expected_type)
+			goto err_type;
+	} else if (arg_type == ARG_PTR_TO_CTX ||
+		   arg_type == ARG_PTR_TO_CTX_OR_NULL) {
+		expected_type = PTR_TO_CTX;
+		if (!(register_is_null(reg) &&
+		      arg_type == ARG_PTR_TO_CTX_OR_NULL)) {
+			if (type != expected_type)
+				goto err_type;
+			err = check_ctx_reg(env, reg, regno);
+			if (err < 0)
+				return err;
+		}
 	} else if (arg_type == ARG_PTR_TO_SOCK_COMMON) {
 		expected_type = PTR_TO_SOCK_COMMON;
 		/* Any sk pointer can be ARG_PTR_TO_SOCK_COMMON */

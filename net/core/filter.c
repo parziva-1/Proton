@@ -4683,9 +4683,11 @@ static const struct bpf_func_proto bpf_get_socket_cookie_sock_ops_proto = {
 
 static u64 __bpf_get_netns_cookie(struct sock *sk)
 {
-	const struct net *net = sk ? sock_net(sk) : &init_net;
-
-	return atomic64_read(&net->net_cookie);
+#ifdef CONFIG_NET_NS
+	return net_gen_cookie(sk ? sk->sk_net.net : &init_net);
+#else
+	return 0;
+#endif
 }
 
 BPF_CALL_1(bpf_get_netns_cookie_sock, struct sock *, ctx)
@@ -7061,6 +7063,8 @@ sock_filter_func_proto(enum bpf_func_id func_id, const struct bpf_prog *prog)
 		return &bpf_get_local_storage_proto;
 	case BPF_FUNC_get_socket_cookie:
 		return &bpf_get_socket_cookie_sock_proto;
+	case BPF_FUNC_get_netns_cookie:
+		return &bpf_get_netns_cookie_sock_proto;
 	case BPF_FUNC_perf_event_output:
 		return &bpf_event_output_data_proto;
 	default:
