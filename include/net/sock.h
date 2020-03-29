@@ -2684,6 +2684,15 @@ skb_sk_is_prefetched(struct sk_buff *skb)
 #endif /* CONFIG_INET */
 }
 
+static inline struct sock *skb_steal_sock(struct sk_buff *skb)
+{
+#ifdef CONFIG_INET
+	return skb->destructor == sock_pfree;
+#else
+	return false;
+#endif /* CONFIG_INET */
+}
+
 /* This helper checks if a socket is a full socket,
  * ie _not_ a timewait or request socket.
  */
