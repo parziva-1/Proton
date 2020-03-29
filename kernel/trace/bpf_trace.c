@@ -1255,8 +1255,8 @@ static const struct bpf_func_proto bpf_send_signal_thread_proto = {
 	.arg1_type	= ARG_ANYTHING,
 };
 
-static const struct bpf_func_proto *
-tracing_func_proto(enum bpf_func_id func_id, const struct bpf_prog *prog)
+const struct bpf_func_proto *
+bpf_tracing_func_proto(enum bpf_func_id func_id, const struct bpf_prog *prog)
 {
 	switch (func_id) {
 	case BPF_FUNC_map_lookup_elem:
@@ -1687,45 +1687,6 @@ raw_tp_prog_func_proto(enum bpf_func_id func_id, const struct bpf_prog *prog)
 		return &bpf_get_stack_proto_raw_tp;
 	default:
 		return bpf_tracing_func_proto(func_id, prog);
-	}
-}
-
-const struct bpf_func_proto *
-tracing_prog_func_proto(enum bpf_func_id func_id, const struct bpf_prog *prog)
-{
-	switch (func_id) {
-#ifdef CONFIG_NET
-	case BPF_FUNC_skb_output:
-		return &bpf_skb_output_proto;
-	case BPF_FUNC_xdp_output:
-		return &bpf_xdp_output_proto;
-	case BPF_FUNC_skc_to_tcp6_sock:
-		return &bpf_skc_to_tcp6_sock_proto;
-	case BPF_FUNC_skc_to_tcp_sock:
-		return &bpf_skc_to_tcp_sock_proto;
-	case BPF_FUNC_skc_to_tcp_timewait_sock:
-		return &bpf_skc_to_tcp_timewait_sock_proto;
-	case BPF_FUNC_skc_to_tcp_request_sock:
-		return &bpf_skc_to_tcp_request_sock_proto;
-	case BPF_FUNC_skc_to_udp6_sock:
-		return &bpf_skc_to_udp6_sock_proto;
-#endif
-	case BPF_FUNC_seq_printf:
-		return prog->expected_attach_type == BPF_TRACE_ITER ?
-		       &bpf_seq_printf_proto :
-		       NULL;
-	case BPF_FUNC_seq_write:
-		return prog->expected_attach_type == BPF_TRACE_ITER ?
-		       &bpf_seq_write_proto :
-		       NULL;
-	case BPF_FUNC_seq_printf_btf:
-		return prog->expected_attach_type == BPF_TRACE_ITER ?
-		       &bpf_seq_printf_btf_proto :
-		       NULL;
-	case BPF_FUNC_d_path:
-		return &bpf_d_path_proto;
-	default:
-		return raw_tp_prog_func_proto(func_id, prog);
 	}
 }
 
