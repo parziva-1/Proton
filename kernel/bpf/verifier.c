@@ -1020,7 +1020,16 @@ static void __mark_reg_known(struct bpf_reg_state *reg, u64 imm)
 	/* Clear id, off, and union(map_ptr, range) */
 	memset(((u8 *)reg) + sizeof(reg->type), 0,
 	       offsetof(struct bpf_reg_state, var_off) - sizeof(reg->type));
-	___mark_reg_known(reg, imm);
+	reg->var_off = tnum_const(imm);
+	reg->smin_value = (s64)imm;
+	reg->smax_value = (s64)imm;
+	reg->umin_value = imm;
+	reg->umax_value = imm;
+
+	reg->s32_min_value = (s32)imm;
+	reg->s32_max_value = (s32)imm;
+	reg->u32_min_value = (u32)imm;
+	reg->u32_max_value = (u32)imm;
 }
 
 static void __mark_reg32_known(struct bpf_reg_state *reg, u64 imm)
@@ -1236,44 +1245,22 @@ static void __reg_bound_offset(struct bpf_reg_state *reg)
 	reg->var_off = tnum_or(tnum_clear_subreg(var64_off), var32_off);
 }
 
-/* Reset the min/max bounds of a register */
-static void __mark_reg_unbounded(struct bpf_reg_state *reg)
-{
-	/* We might have learned new bounds from the var_off. */
-	__update_reg_bounds(reg);
-	/* We might have learned something about the sign bit. */
-	__reg_deduce_bounds(reg);
-	/* We might have learned some bits from the bounds. */
-	__reg_bound_offset(reg);
-	/* Intersecting with the old var_off might have improved our bounds
-	 * slightly, e.g. if umax was 0x7f...f and var_off was (0; 0xf...fc),
-	 * then new var_off is (0; 0x7f...fc) which improves our umax.
-	 */
-	__update_reg_bounds(reg);
-}
-
-static bool __reg32_bound_s64(s32 a)
-{
-	return a >= 0 && a <= S32_MAX;
-}
-
 static void __reg_assign_32_into_64(struct bpf_reg_state *reg)
 {
 	reg->umin_value = reg->u32_min_value;
 	reg->umax_value = reg->u32_max_value;
-
-	/* Attempt to pull 32-bit signed bounds into 64-bit bounds but must
-	 * be positive otherwise set to worse case bounds and refine later
-	 * from tnum.
+	/* Attempt to pull 32-bit signed bounds into 64-bit bounds
+	 * but must be positive otherwise set to worse case bounds
+	 * and refine later from tnum.
 	 */
-	if (__reg32_bound_s64(reg->s32_min_value) &&
-	    __reg32_bound_s64(reg->s32_max_value)) {
+	if (reg->s32_min_value > 0)
 		reg->smin_value = reg->s32_min_value;
-		reg->smax_value = reg->s32_max_value;
-	} else {
+	else
 		reg->smin_value = 0;
+	if (reg->s32_max_value > 0)
+		reg->smax_value = reg->s32_max_value;
+	else
 		reg->smax_value = U32_MAX;
-	}
 }
 
 static void __reg_combine_32_into_64(struct bpf_reg_state *reg)
@@ -1293,32 +1280,52 @@ static void __reg_combine_32_into_64(struct bpf_reg_state *reg)
 		 * so they do not impact tnum bounds calculation.
 		 */
 		__mark_reg64_unbounded(reg);
+		__update_reg_bounds(reg);
 	}
-	reg_bounds_sync(reg);
+
+	/* Intersecting with the old var_off might have improved our bounds
+	 * slightly.  e.g. if umax was 0x7f...f and var_off was (0; 0xf...fc),
+	 * then new var_off is (0; 0x7f...fc) which improves our umax.
+	 */
+	__reg_deduce_bounds(reg);
+	__reg_bound_offset(reg);
+	__update_reg_bounds(reg);
 }
 
 static bool __reg64_bound_s32(s64 a)
 {
-	return a >= S32_MIN && a <= S32_MAX;
+	if (a > S32_MIN && a < S32_MAX)
+		return true;
+	return false;
 }
 
 static bool __reg64_bound_u32(u64 a)
 {
-	return a >= U32_MIN && a <= U32_MAX;
+	if (a > U32_MIN && a < U32_MAX)
+		return true;
+	return false;
 }
 
 static void __reg_combine_64_into_32(struct bpf_reg_state *reg)
 {
 	__mark_reg32_unbounded(reg);
-	if (__reg64_bound_s32(reg->smin_value) && __reg64_bound_s32(reg->smax_value)) {
+
+	if (__reg64_bound_s32(reg->smin_value))
 		reg->s32_min_value = (s32)reg->smin_value;
+	if (__reg64_bound_s32(reg->smax_value))
 		reg->s32_max_value = (s32)reg->smax_value;
-	}
-	if (__reg64_bound_u32(reg->umin_value) && __reg64_bound_u32(reg->umax_value)) {
+	if (__reg64_bound_u32(reg->umin_value))
 		reg->u32_min_value = (u32)reg->umin_value;
+	if (__reg64_bound_u32(reg->umax_value))
 		reg->u32_max_value = (u32)reg->umax_value;
-	}
-	reg_bounds_sync(reg);
+
+	/* Intersecting with the old var_off might have improved our bounds
+	 * slightly.  e.g. if umax was 0x7f...f and var_off was (0; 0xf...fc),
+	 * then new var_off is (0; 0x7f...fc) which improves our umax.
+	 */
+	__reg_deduce_bounds(reg);
+	__reg_bound_offset(reg);
+	__update_reg_bounds(reg);
 }
 
 /* Mark a register as having a completely unknown (scalar) value. */
@@ -3652,25 +3659,6 @@ static int check_tp_buffer_access(struct bpf_verifier_env *env,
 	return 0;
 }
 
-static int check_buffer_access(struct bpf_verifier_env *env,
-			       const struct bpf_reg_state *reg,
-			       int regno, int off, int size,
-			       bool zero_size_allowed,
-			       const char *buf_info,
-			       u32 *max_access)
-{
-	int err;
-
-	err = __check_buffer_access(env, buf_info, reg, regno, off, size);
-	if (err)
-		return err;
-
-	if (off + size > *max_access)
-		*max_access = off + size;
-
-	return 0;
-}
-
 /* BPF architecture zero extends alu32 ops into 64-bit registesr */
 static void zext_32_to_64(struct bpf_reg_state *reg)
 {
@@ -5726,7 +5714,7 @@ static bool signed_add_overflows(s64 a, s64 b)
 	return res < a;
 }
 
-static bool signed_add32_overflows(s32 a, s32 b)
+static bool signed_add32_overflows(s64 a, s64 b)
 {
 	/* Do the add in u32, where overflow is well-defined */
 	s32 res = (s32)((u32)a + (u32)b);
@@ -5736,7 +5724,7 @@ static bool signed_add32_overflows(s32 a, s32 b)
 	return res < a;
 }
 
-static bool signed_sub_overflows(s64 a, s64 b)
+static bool signed_sub_overflows(s32 a, s32 b)
 {
 	/* Do the sub in u64, where overflow is well-defined */
 	s64 res = (s64)((u64)a - (u64)b);
@@ -5748,7 +5736,7 @@ static bool signed_sub_overflows(s64 a, s64 b)
 
 static bool signed_sub32_overflows(s32 a, s32 b)
 {
-	/* Do the sub in u32, where overflow is well-defined */
+	/* Do the sub in u64, where overflow is well-defined */
 	s32 res = (s32)((u32)a - (u32)b);
 
 	if (b < 0)
@@ -6346,6 +6334,32 @@ reject:
 	return 0;
 }
 
+static void scalar32_min_max_add(struct bpf_reg_state *dst_reg,
+				 struct bpf_reg_state *src_reg)
+{
+	s32 smin_val = src_reg->s32_min_value;
+	s32 smax_val = src_reg->s32_max_value;
+	u32 umin_val = src_reg->u32_min_value;
+	u32 umax_val = src_reg->u32_max_value;
+
+	if (signed_add32_overflows(dst_reg->s32_min_value, smin_val) ||
+	    signed_add32_overflows(dst_reg->s32_max_value, smax_val)) {
+		dst_reg->s32_min_value = S32_MIN;
+		dst_reg->s32_max_value = S32_MAX;
+	} else {
+		dst_reg->s32_min_value += smin_val;
+		dst_reg->s32_max_value += smax_val;
+	}
+	if (dst_reg->u32_min_value + umin_val < umin_val ||
+	    dst_reg->u32_max_value + umax_val < umax_val) {
+		dst_reg->u32_min_value = 0;
+		dst_reg->u32_max_value = U32_MAX;
+	} else {
+		dst_reg->u32_min_value += umin_val;
+		dst_reg->u32_max_value += umax_val;
+	}
+}
+
 static void scalar_min_max_add(struct bpf_reg_state *dst_reg,
 			       struct bpf_reg_state *src_reg)
 {
@@ -6370,7 +6384,34 @@ static void scalar_min_max_add(struct bpf_reg_state *dst_reg,
 		dst_reg->umin_value += umin_val;
 		dst_reg->umax_value += umax_val;
 	}
-	dst_reg->var_off = tnum_add(dst_reg->var_off, src_reg->var_off);
+}
+
+static void scalar32_min_max_sub(struct bpf_reg_state *dst_reg,
+				 struct bpf_reg_state *src_reg)
+{
+	s32 smin_val = src_reg->s32_min_value;
+	s32 smax_val = src_reg->s32_max_value;
+	u32 umin_val = src_reg->u32_min_value;
+	u32 umax_val = src_reg->u32_max_value;
+
+	if (signed_sub32_overflows(dst_reg->s32_min_value, smax_val) ||
+	    signed_sub32_overflows(dst_reg->s32_max_value, smin_val)) {
+		/* Overflow possible, we know nothing */
+		dst_reg->s32_min_value = S32_MIN;
+		dst_reg->s32_max_value = S32_MAX;
+	} else {
+		dst_reg->s32_min_value -= smax_val;
+		dst_reg->s32_max_value -= smin_val;
+	}
+	if (dst_reg->u32_min_value < umax_val) {
+		/* Overflow possible, we know nothing */
+		dst_reg->u32_min_value = 0;
+		dst_reg->u32_max_value = U32_MAX;
+	} else {
+		/* Cannot overflow (as long as bounds are consistent) */
+		dst_reg->u32_min_value -= umax_val;
+		dst_reg->u32_max_value -= umin_val;
+	}
 }
 
 static void scalar_min_max_sub(struct bpf_reg_state *dst_reg,
@@ -6399,7 +6440,38 @@ static void scalar_min_max_sub(struct bpf_reg_state *dst_reg,
 		dst_reg->umin_value -= umax_val;
 		dst_reg->umax_value -= umin_val;
 	}
-	dst_reg->var_off = tnum_sub(dst_reg->var_off, src_reg->var_off);
+}
+
+static void scalar32_min_max_mul(struct bpf_reg_state *dst_reg,
+				 struct bpf_reg_state *src_reg)
+{
+	s32 smin_val = src_reg->s32_min_value;
+	u32 umin_val = src_reg->u32_min_value;
+	u32 umax_val = src_reg->u32_max_value;
+
+	if (smin_val < 0 || dst_reg->s32_min_value < 0) {
+		/* Ain't nobody got time to multiply that sign */
+		__mark_reg32_unbounded(dst_reg);
+		return;
+	}
+	/* Both values are positive, so we can work with unsigned and
+	 * copy the result to signed (unless it exceeds S32_MAX).
+	 */
+	if (umax_val > U16_MAX || dst_reg->u32_max_value > U16_MAX) {
+		/* Potential overflow, we know nothing */
+		__mark_reg32_unbounded(dst_reg);
+		return;
+	}
+	dst_reg->u32_min_value *= umin_val;
+	dst_reg->u32_max_value *= umax_val;
+	if (dst_reg->u32_max_value > S32_MAX) {
+		/* Overflow possible, we know nothing */
+		dst_reg->s32_min_value = S32_MIN;
+		dst_reg->s32_max_value = S32_MAX;
+	} else {
+		dst_reg->s32_min_value = dst_reg->u32_min_value;
+		dst_reg->s32_max_value = dst_reg->u32_max_value;
+	}
 }
 
 static void scalar_min_max_mul(struct bpf_reg_state *dst_reg,
@@ -6409,11 +6481,9 @@ static void scalar_min_max_mul(struct bpf_reg_state *dst_reg,
 	u64 umin_val = src_reg->umin_value;
 	u64 umax_val = src_reg->umax_value;
 
-	dst_reg->var_off = tnum_mul(dst_reg->var_off, src_reg->var_off);
 	if (smin_val < 0 || dst_reg->smin_value < 0) {
 		/* Ain't nobody got time to multiply that sign */
-		__mark_reg_unbounded(dst_reg);
-		__update_reg_bounds(dst_reg);
+		__mark_reg64_unbounded(dst_reg);
 		return;
 	}
 	/* Both values are positive, so we can work with unsigned and
@@ -6421,9 +6491,7 @@ static void scalar_min_max_mul(struct bpf_reg_state *dst_reg,
 	 */
 	if (umax_val > U32_MAX || dst_reg->umax_value > U32_MAX) {
 		/* Potential overflow, we know nothing */
-		__mark_reg_unbounded(dst_reg);
-		/* (except what we can learn from the var_off) */
-		__update_reg_bounds(dst_reg);
+		__mark_reg64_unbounded(dst_reg);
 		return;
 	}
 	dst_reg->umin_value *= umin_val;
@@ -6438,16 +6506,59 @@ static void scalar_min_max_mul(struct bpf_reg_state *dst_reg,
 	}
 }
 
-static void scalar_min_max_and(struct bpf_reg_state *dst_reg,
-			       struct bpf_reg_state *src_reg)
+static void scalar32_min_max_and(struct bpf_reg_state *dst_reg,
+				 struct bpf_reg_state *src_reg)
 {
-	s64 smin_val = src_reg->smin_value;
-	u64 umax_val = src_reg->umax_value;
+	bool src_known = tnum_subreg_is_const(src_reg->var_off);
+	bool dst_known = tnum_subreg_is_const(dst_reg->var_off);
+	struct tnum var32_off = tnum_subreg(dst_reg->var_off);
+	s32 smin_val = src_reg->s32_min_value;
+	u32 umax_val = src_reg->u32_max_value;
+
+	/* Assuming scalar64_min_max_and will be called so its safe
+	 * to skip updating register for known 32-bit case.
+	 */
+	if (src_known && dst_known)
+		return;
 
 	/* We get our minimum from the var_off, since that's inherently
 	 * bitwise.  Our maximum is the minimum of the operands' maxima.
 	 */
-	dst_reg->var_off = tnum_and(dst_reg->var_off, src_reg->var_off);
+	dst_reg->u32_min_value = var32_off.value;
+	dst_reg->u32_max_value = min(dst_reg->u32_max_value, umax_val);
+	if (dst_reg->s32_min_value < 0 || smin_val < 0) {
+		/* Lose signed bounds when ANDing negative numbers,
+		 * ain't nobody got time for that.
+		 */
+		dst_reg->s32_min_value = S32_MIN;
+		dst_reg->s32_max_value = S32_MAX;
+	} else {
+		/* ANDing two positives gives a positive, so safe to
+		 * cast result into s64.
+		 */
+		dst_reg->s32_min_value = dst_reg->u32_min_value;
+		dst_reg->s32_max_value = dst_reg->u32_max_value;
+	}
+
+}
+
+static void scalar_min_max_and(struct bpf_reg_state *dst_reg,
+			       struct bpf_reg_state *src_reg)
+{
+	bool src_known = tnum_is_const(src_reg->var_off);
+	bool dst_known = tnum_is_const(dst_reg->var_off);
+	s64 smin_val = src_reg->smin_value;
+	u64 umax_val = src_reg->umax_value;
+
+	if (src_known && dst_known) {
+		__mark_reg_known(dst_reg, dst_reg->var_off.value &
+					  src_reg->var_off.value);
+		return;
+	}
+
+	/* We get our minimum from the var_off, since that's inherently
+	 * bitwise.  Our maximum is the minimum of the operands' maxima.
+	 */
 	dst_reg->umin_value = dst_reg->var_off.value;
 	dst_reg->umax_value = min(dst_reg->umax_value, umax_val);
 	if (dst_reg->smin_value < 0 || smin_val < 0) {
@@ -6467,16 +6578,58 @@ static void scalar_min_max_and(struct bpf_reg_state *dst_reg,
 	__update_reg_bounds(dst_reg);
 }
 
-static void scalar_min_max_or(struct bpf_reg_state *dst_reg,
-			      struct bpf_reg_state *src_reg)
+static void scalar32_min_max_or(struct bpf_reg_state *dst_reg,
+				struct bpf_reg_state *src_reg)
 {
-	s64 smin_val = src_reg->smin_value;
-	u64 umin_val = src_reg->umin_value;
+	bool src_known = tnum_subreg_is_const(src_reg->var_off);
+	bool dst_known = tnum_subreg_is_const(dst_reg->var_off);
+	struct tnum var32_off = tnum_subreg(dst_reg->var_off);
+	s32 smin_val = src_reg->smin_value;
+	u32 umin_val = src_reg->umin_value;
+
+	/* Assuming scalar64_min_max_or will be called so it is safe
+	 * to skip updating register for known case.
+	 */
+	if (src_known && dst_known)
+		return;
 
 	/* We get our maximum from the var_off, and our minimum is the
 	 * maximum of the operands' minima
 	 */
-	dst_reg->var_off = tnum_or(dst_reg->var_off, src_reg->var_off);
+	dst_reg->u32_min_value = max(dst_reg->u32_min_value, umin_val);
+	dst_reg->u32_max_value = var32_off.value | var32_off.mask;
+	if (dst_reg->s32_min_value < 0 || smin_val < 0) {
+		/* Lose signed bounds when ORing negative numbers,
+		 * ain't nobody got time for that.
+		 */
+		dst_reg->s32_min_value = S32_MIN;
+		dst_reg->s32_max_value = S32_MAX;
+	} else {
+		/* ORing two positives gives a positive, so safe to
+		 * cast result into s64.
+		 */
+		dst_reg->s32_min_value = dst_reg->umin_value;
+		dst_reg->s32_max_value = dst_reg->umax_value;
+	}
+}
+
+static void scalar_min_max_or(struct bpf_reg_state *dst_reg,
+			      struct bpf_reg_state *src_reg)
+{
+	bool src_known = tnum_is_const(src_reg->var_off);
+	bool dst_known = tnum_is_const(dst_reg->var_off);
+	s64 smin_val = src_reg->smin_value;
+	u64 umin_val = src_reg->umin_value;
+
+	if (src_known && dst_known) {
+		__mark_reg_known(dst_reg, dst_reg->var_off.value |
+					  src_reg->var_off.value);
+		return;
+	}
+
+	/* We get our maximum from the var_off, and our minimum is the
+	 * maximum of the operands' minima
+	 */
 	dst_reg->umin_value = max(dst_reg->umin_value, umin_val);
 	dst_reg->umax_value = dst_reg->var_off.value | dst_reg->var_off.mask;
 	if (dst_reg->smin_value < 0 || smin_val < 0) {
@@ -6496,17 +6649,62 @@ static void scalar_min_max_or(struct bpf_reg_state *dst_reg,
 	__update_reg_bounds(dst_reg);
 }
 
-static void scalar_min_max_lsh(struct bpf_reg_state *dst_reg,
-			       struct bpf_reg_state *src_reg)
+static void __scalar32_min_max_lsh(struct bpf_reg_state *dst_reg,
+				   u64 umin_val, u64 umax_val)
 {
-	u64 umax_val = src_reg->umax_value;
-	u64 umin_val = src_reg->umin_value;
-
 	/* We lose all sign bit information (except what we can pick
 	 * up from var_off)
 	 */
-	dst_reg->smin_value = S64_MIN;
-	dst_reg->smax_value = S64_MAX;
+	dst_reg->s32_min_value = S32_MIN;
+	dst_reg->s32_max_value = S32_MAX;
+	/* If we might shift our top bit out, then we know nothing */
+	if (umax_val > 31 || dst_reg->u32_max_value > 1ULL << (31 - umax_val)) {
+		dst_reg->u32_min_value = 0;
+		dst_reg->u32_max_value = U32_MAX;
+	} else {
+		dst_reg->u32_min_value <<= umin_val;
+		dst_reg->u32_max_value <<= umax_val;
+	}
+}
+
+static void scalar32_min_max_lsh(struct bpf_reg_state *dst_reg,
+				 struct bpf_reg_state *src_reg)
+{
+	u32 umax_val = src_reg->u32_max_value;
+	u32 umin_val = src_reg->u32_min_value;
+	/* u32 alu operation will zext upper bits */
+	struct tnum subreg = tnum_subreg(dst_reg->var_off);
+
+	__scalar32_min_max_lsh(dst_reg, umin_val, umax_val);
+	dst_reg->var_off = tnum_subreg(tnum_lshift(subreg, umin_val));
+	/* Not required but being careful mark reg64 bounds as unknown so
+	 * that we are forced to pick them up from tnum and zext later and
+	 * if some path skips this step we are still safe.
+	 */
+	__mark_reg64_unbounded(dst_reg);
+	__update_reg32_bounds(dst_reg);
+}
+
+static void __scalar64_min_max_lsh(struct bpf_reg_state *dst_reg,
+				   u64 umin_val, u64 umax_val)
+{
+	/* Special case <<32 because it is a common compiler pattern to sign
+	 * extend subreg by doing <<32 s>>32. In this case if 32bit bounds are
+	 * positive we know this shift will also be positive so we can track
+	 * bounds correctly. Otherwise we lose all sign bit information except
+	 * what we can pick up from var_off. Perhaps we can generalize this
+	 * later to shifts of any length.
+	 */
+	if (umin_val == 32 && umax_val == 32 && dst_reg->s32_max_value >= 0)
+		dst_reg->smax_value = (s64)dst_reg->s32_max_value << 32;
+	else
+		dst_reg->smax_value = S64_MAX;
+
+	if (umin_val == 32 && umax_val == 32 && dst_reg->s32_min_value >= 0)
+		dst_reg->smin_value = (s64)dst_reg->s32_min_value << 32;
+	else
+		dst_reg->smin_value = S64_MIN;
+
 	/* If we might shift our top bit out, then we know nothing */
 	if (dst_reg->umax_value > 1ULL << (63 - umax_val)) {
 		dst_reg->umin_value = 0;
@@ -6515,9 +6713,53 @@ static void scalar_min_max_lsh(struct bpf_reg_state *dst_reg,
 		dst_reg->umin_value <<= umin_val;
 		dst_reg->umax_value <<= umax_val;
 	}
+}
+
+static void scalar_min_max_lsh(struct bpf_reg_state *dst_reg,
+			       struct bpf_reg_state *src_reg)
+{
+	u64 umax_val = src_reg->umax_value;
+	u64 umin_val = src_reg->umin_value;
+
+	/* scalar64 calc uses 32bit unshifted bounds so must be called first */
+	__scalar64_min_max_lsh(dst_reg, umin_val, umax_val);
+	__scalar32_min_max_lsh(dst_reg, umin_val, umax_val);
+
 	dst_reg->var_off = tnum_lshift(dst_reg->var_off, umin_val);
 	/* We may learn something more from the var_off */
 	__update_reg_bounds(dst_reg);
+}
+
+static void scalar32_min_max_rsh(struct bpf_reg_state *dst_reg,
+				 struct bpf_reg_state *src_reg)
+{
+	struct tnum subreg = tnum_subreg(dst_reg->var_off);
+	u32 umax_val = src_reg->u32_max_value;
+	u32 umin_val = src_reg->u32_min_value;
+
+	/* BPF_RSH is an unsigned shift.  If the value in dst_reg might
+	 * be negative, then either:
+	 * 1) src_reg might be zero, so the sign bit of the result is
+	 *    unknown, so we lose our signed bounds
+	 * 2) it's known negative, thus the unsigned bounds capture the
+	 *    signed bounds
+	 * 3) the signed bounds cross zero, so they tell us nothing
+	 *    about the result
+	 * If the value in dst_reg is known nonnegative, then again the
+	 * unsigned bounts capture the signed bounds.
+	 * Thus, in all cases it suffices to blow away our signed bounds
+	 * and rely on inferring new ones from the unsigned bounds and
+	 * var_off of the result.
+	 */
+	dst_reg->s32_min_value = S32_MIN;
+	dst_reg->s32_max_value = S32_MAX;
+
+	dst_reg->var_off = tnum_rshift(subreg, umin_val);
+	dst_reg->u32_min_value >>= umax_val;
+	dst_reg->u32_max_value >>= umin_val;
+
+	__mark_reg64_unbounded(dst_reg);
+	__update_reg32_bounds(dst_reg);
 }
 
 static void scalar_min_max_rsh(struct bpf_reg_state *dst_reg,
@@ -6545,35 +6787,62 @@ static void scalar_min_max_rsh(struct bpf_reg_state *dst_reg,
 	dst_reg->var_off = tnum_rshift(dst_reg->var_off, umin_val);
 	dst_reg->umin_value >>= umax_val;
 	dst_reg->umax_value >>= umin_val;
-	/* We may learn something more from the var_off */
+
+	/* Its not easy to operate on alu32 bounds here because it depends
+	 * on bits being shifted in. Take easy way out and mark unbounded
+	 * so we can recalculate later from tnum.
+	 */
+	__mark_reg32_unbounded(dst_reg);
 	__update_reg_bounds(dst_reg);
 }
 
-static void scalar_min_max_arsh(struct bpf_reg_state *dst_reg,
-			        struct bpf_reg_state *src_reg,
-				u64 insn_bitness)
+static void scalar32_min_max_arsh(struct bpf_reg_state *dst_reg,
+				  struct bpf_reg_state *src_reg)
 {
-	u64 umin_val = src_reg->umin_value;
+	u64 umin_val = src_reg->u32_min_value;
 
 	/* Upon reaching here, src_known is true and
 	 * umax_val is equal to umin_val.
 	 */
-	if (insn_bitness == 32) {
-		dst_reg->smin_value = (u32)(((s32)dst_reg->smin_value) >> umin_val);
-		dst_reg->smax_value = (u32)(((s32)dst_reg->smax_value) >> umin_val);
-	} else {
-		dst_reg->smin_value >>= umin_val;
-		dst_reg->smax_value >>= umin_val;
-	}
+	dst_reg->s32_min_value = (u32)(((s32)dst_reg->s32_min_value) >> umin_val);
+	dst_reg->s32_max_value = (u32)(((s32)dst_reg->s32_max_value) >> umin_val);
 
-	dst_reg->var_off = tnum_arshift(dst_reg->var_off, umin_val,
-					insn_bitness);
+	dst_reg->var_off = tnum_arshift(tnum_subreg(dst_reg->var_off), umin_val, 32);
+
+	/* blow away the dst_reg umin_value/umax_value and rely on
+	 * dst_reg var_off to refine the result.
+	 */
+	dst_reg->u32_min_value = 0;
+	dst_reg->u32_max_value = U32_MAX;
+
+	__mark_reg64_unbounded(dst_reg);
+	__update_reg32_bounds(dst_reg);
+}
+
+static void scalar_min_max_arsh(struct bpf_reg_state *dst_reg,
+				struct bpf_reg_state *src_reg)
+{
+	u64 umin_val = src_reg->umin_value;
+
+	/* Upon reaching here, src_known is true and umax_val is equal
+	 * to umin_val.
+	 */
+	dst_reg->smin_value >>= umin_val;
+	dst_reg->smax_value >>= umin_val;
+
+	dst_reg->var_off = tnum_arshift(dst_reg->var_off, umin_val, 64);
 
 	/* blow away the dst_reg umin_value/umax_value and rely on
 	 * dst_reg var_off to refine the result.
 	 */
 	dst_reg->umin_value = 0;
 	dst_reg->umax_value = U64_MAX;
+
+	/* Its not easy to operate on alu32 bounds here because it depends
+	 * on bits being shifted in from upper 32-bits. Take easy way out
+	 * and mark unbounded so we can recalculate later from tnum.
+	 */
+	__mark_reg32_unbounded(dst_reg);
 	__update_reg_bounds(dst_reg);
 }
 
@@ -6609,6 +6878,7 @@ static int adjust_scalar_min_max_vals(struct bpf_verifier_env *env,
 
 	if (alu32) {
 		src_known = tnum_subreg_is_const(src_reg.var_off);
+		dst_known = tnum_subreg_is_const(dst_reg->var_off);
 		if ((src_known &&
 		     (s32_min_val != s32_max_val || u32_min_val != u32_max_val)) ||
 		    s32_min_val > s32_max_val || u32_min_val > u32_max_val) {
@@ -6620,6 +6890,7 @@ static int adjust_scalar_min_max_vals(struct bpf_verifier_env *env,
 		}
 	} else {
 		src_known = tnum_is_const(src_reg.var_off);
+		dst_known = tnum_is_const(dst_reg->var_off);
 		if ((src_known &&
 		     (smin_val != smax_val || umin_val != umax_val)) ||
 		    smin_val > smax_val || umin_val > umax_val) {
@@ -6659,7 +6930,9 @@ static int adjust_scalar_min_max_vals(struct bpf_verifier_env *env,
 	 */
 	switch (opcode) {
 	case BPF_ADD:
+		scalar32_min_max_add(dst_reg, &src_reg);
 		scalar_min_max_add(dst_reg, &src_reg);
+		dst_reg->var_off = tnum_add(dst_reg->var_off, src_reg.var_off);
 		break;
 	case BPF_SUB:
 		scalar32_min_max_sub(dst_reg, &src_reg);
@@ -6667,22 +6940,18 @@ static int adjust_scalar_min_max_vals(struct bpf_verifier_env *env,
 		dst_reg->var_off = tnum_sub(dst_reg->var_off, src_reg.var_off);
 		break;
 	case BPF_MUL:
+		dst_reg->var_off = tnum_mul(dst_reg->var_off, src_reg.var_off);
+		scalar32_min_max_mul(dst_reg, &src_reg);
 		scalar_min_max_mul(dst_reg, &src_reg);
 		break;
 	case BPF_AND:
-		if (src_known && dst_known) {
-			__mark_reg_known(dst_reg, dst_reg->var_off.value &
-						  src_reg.var_off.value);
-			break;
-		}
+		dst_reg->var_off = tnum_and(dst_reg->var_off, src_reg.var_off);
+		scalar32_min_max_and(dst_reg, &src_reg);
 		scalar_min_max_and(dst_reg, &src_reg);
 		break;
 	case BPF_OR:
-		if (src_known && dst_known) {
-			__mark_reg_known(dst_reg, dst_reg->var_off.value |
-						  src_reg.var_off.value);
-			break;
-		}
+		dst_reg->var_off = tnum_or(dst_reg->var_off, src_reg.var_off);
+		scalar32_min_max_or(dst_reg, &src_reg);
 		scalar_min_max_or(dst_reg, &src_reg);
 		break;
 	case BPF_LSH:
@@ -6693,7 +6962,10 @@ static int adjust_scalar_min_max_vals(struct bpf_verifier_env *env,
 			mark_reg_unknown(env, regs, insn->dst_reg);
 			break;
 		}
-		scalar_min_max_lsh(dst_reg, &src_reg);
+		if (alu32)
+			scalar32_min_max_lsh(dst_reg, &src_reg);
+		else
+			scalar_min_max_lsh(dst_reg, &src_reg);
 		break;
 	case BPF_RSH:
 		if (umax_val >= insn_bitness) {
@@ -6703,7 +6975,10 @@ static int adjust_scalar_min_max_vals(struct bpf_verifier_env *env,
 			mark_reg_unknown(env, regs, insn->dst_reg);
 			break;
 		}
-		scalar_min_max_rsh(dst_reg, &src_reg);
+		if (alu32)
+			scalar32_min_max_rsh(dst_reg, &src_reg);
+		else
+			scalar_min_max_rsh(dst_reg, &src_reg);
 		break;
 	case BPF_ARSH:
 		if (umax_val >= insn_bitness) {
@@ -6713,7 +6988,10 @@ static int adjust_scalar_min_max_vals(struct bpf_verifier_env *env,
 			mark_reg_unknown(env, regs, insn->dst_reg);
 			break;
 		}
-		scalar_min_max_arsh(dst_reg, &src_reg, insn_bitness);
+		if (alu32)
+			scalar32_min_max_arsh(dst_reg, &src_reg);
+		else
+			scalar_min_max_arsh(dst_reg, &src_reg);
 		break;
 	default:
 		mark_reg_unknown(env, regs, insn->dst_reg);
@@ -6723,7 +7001,10 @@ static int adjust_scalar_min_max_vals(struct bpf_verifier_env *env,
 	/* ALU32 ops are zero extended into 64bit register */
 	if (alu32)
 		zext_32_to_64(dst_reg);
-	reg_bounds_sync(dst_reg);
+
+	__update_reg_bounds(dst_reg);
+	__reg_deduce_bounds(dst_reg);
+	__reg_bound_offset(dst_reg);
 	return 0;
 }
 
@@ -6917,7 +7198,6 @@ static int check_alu_op(struct bpf_verifier_env *env, struct bpf_insn *insn)
 							 insn->dst_reg);
 				}
 				zext_32_to_64(dst_reg);
-				reg_bounds_sync(dst_reg);
 			}
 		} else {
 			/* case: R = imm
@@ -7097,7 +7377,7 @@ static int is_branch32_taken(struct bpf_reg_state *reg, u32 val, u8 opcode)
 	case BPF_JSGT:
 		if (reg->s32_min_value > sval)
 			return 1;
-		else if (reg->s32_max_value <= sval)
+		else if (reg->s32_max_value < sval)
 			return 0;
 		break;
 	case BPF_JLT:
@@ -7224,90 +7504,12 @@ static int is_branch64_taken(struct bpf_reg_state *reg, u64 val, u8 opcode)
 static int is_branch_taken(struct bpf_reg_state *reg, u64 val, u8 opcode,
 			   bool is_jmp32)
 {
-	if (__is_pointer_value(false, reg)) {
-		if (!reg_type_not_null(reg->type))
-			return -1;
-
-		/* If pointer is valid tests against zero will fail so we can
-		 * use this to direct branch taken.
-		 */
-		if (val != 0)
-			return -1;
-
-		switch (opcode) {
-		case BPF_JEQ:
-			return 0;
-		case BPF_JNE:
-			return 1;
-		default:
-			return -1;
-		}
-	}
+	if (__is_pointer_value(false, reg))
+		return -1;
 
 	if (is_jmp32)
 		return is_branch32_taken(reg, val, opcode);
 	return is_branch64_taken(reg, val, opcode);
-}
-
-static int flip_opcode(u32 opcode)
-{
-	/* How can we transform "a <op> b" into "b <op> a"? */
-	static const u8 opcode_flip[16] = {
-		/* these stay the same */
-		[BPF_JEQ  >> 4] = BPF_JEQ,
-		[BPF_JNE  >> 4] = BPF_JNE,
-		[BPF_JSET >> 4] = BPF_JSET,
-		/* these swap "lesser" and "greater" (L and G in the opcodes) */
-		[BPF_JGE  >> 4] = BPF_JLE,
-		[BPF_JGT  >> 4] = BPF_JLT,
-		[BPF_JLE  >> 4] = BPF_JGE,
-		[BPF_JLT  >> 4] = BPF_JGT,
-		[BPF_JSGE >> 4] = BPF_JSLE,
-		[BPF_JSGT >> 4] = BPF_JSLT,
-		[BPF_JSLE >> 4] = BPF_JSGE,
-		[BPF_JSLT >> 4] = BPF_JSGT
-	};
-	return opcode_flip[opcode >> 4];
-}
-
-static int is_pkt_ptr_branch_taken(struct bpf_reg_state *dst_reg,
-				   struct bpf_reg_state *src_reg,
-				   u8 opcode)
-{
-	struct bpf_reg_state *pkt;
-
-	if (src_reg->type == PTR_TO_PACKET_END) {
-		pkt = dst_reg;
-	} else if (dst_reg->type == PTR_TO_PACKET_END) {
-		pkt = src_reg;
-		opcode = flip_opcode(opcode);
-	} else {
-		return -1;
-	}
-
-	if (pkt->range >= 0)
-		return -1;
-
-	switch (opcode) {
-	case BPF_JLE:
-		/* pkt <= pkt_end */
-		fallthrough;
-	case BPF_JGT:
-		/* pkt > pkt_end */
-		if (pkt->range == BEYOND_PKT_END)
-			/* pkt has at last one extra byte beyond pkt_end */
-			return opcode == BPF_JGT;
-		break;
-	case BPF_JLT:
-		/* pkt < pkt_end */
-		fallthrough;
-	case BPF_JGE:
-		/* pkt >= pkt_end */
-		if (pkt->range == BEYOND_PKT_END || pkt->range == AT_PKT_END)
-			return opcode == BPF_JGE;
-		break;
-	}
-	return -1;
 }
 
 /* Adjusts the register min/max values in the case that the dst_reg is the
@@ -7347,22 +7549,19 @@ static void reg_set_min_max(struct bpf_reg_state *true_reg,
 	 * Hence when marking register as known preserve it's ID.
 	 */
 	case BPF_JEQ:
-		if (is_jmp32) {
-			__mark_reg32_known(true_reg, val32);
-			true_32off = tnum_subreg(true_reg->var_off);
-		} else {
-			___mark_reg_known(true_reg, val);
-			true_64off = true_reg->var_off;
-		}
-		break;
 	case BPF_JNE:
-		if (is_jmp32) {
-			__mark_reg32_known(false_reg, val32);
-			false_32off = tnum_subreg(false_reg->var_off);
-		} else {
-			___mark_reg_known(false_reg, val);
-			false_64off = false_reg->var_off;
-		}
+	{
+		struct bpf_reg_state *reg =
+			opcode == BPF_JEQ ? true_reg : false_reg;
+
+		/* For BPF_JEQ, if this is false we know nothing Jon Snow, but
+		 * if it is true we know the value for sure. Likewise for
+		 * BPF_JNE.
+		 */
+		if (is_jmp32)
+			__mark_reg32_known(reg, val32);
+		else
+			__mark_reg_known(reg, val);
 		break;
 	case BPF_JSET:
 		if (is_jmp32) {
@@ -7457,17 +7656,19 @@ static void reg_set_min_max(struct bpf_reg_state *true_reg,
 		return;
 	}
 
-	__reg_deduce_bounds(false_reg);
-	__reg_deduce_bounds(true_reg);
-	/* We might have learned some bits from the bounds. */
-	__reg_bound_offset(false_reg);
-	__reg_bound_offset(true_reg);
-	/* Intersecting with the old var_off might have improved our bounds
-	 * slightly.  e.g. if umax was 0x7f...f and var_off was (0; 0xf...fc),
-	 * then new var_off is (0; 0x7f...fc) which improves our umax.
-	 */
-	__update_reg_bounds(false_reg);
-	__update_reg_bounds(true_reg);
+	if (is_jmp32) {
+		false_reg->var_off = tnum_or(tnum_clear_subreg(false_64off),
+					     tnum_subreg(false_32off));
+		true_reg->var_off = tnum_or(tnum_clear_subreg(true_64off),
+					    tnum_subreg(true_32off));
+		__reg_combine_32_into_64(false_reg);
+		__reg_combine_32_into_64(true_reg);
+	} else {
+		false_reg->var_off = false_64off;
+		true_reg->var_off = true_64off;
+		__reg_combine_64_into_32(false_reg);
+		__reg_combine_64_into_32(true_reg);
+	}
 }
 
 /* Same as above, but for the case that dst_reg holds a constant and src_reg is
@@ -7499,7 +7700,7 @@ static void reg_set_min_max_inv(struct bpf_reg_state *true_reg,
 	 * BPF_JA, can't get here.
 	 */
 	if (opcode)
-		reg_set_min_max(true_reg, false_reg, val, opcode, is_jmp32);
+		reg_set_min_max(true_reg, false_reg, val, val32, opcode, is_jmp32);
 }
 
 /* Regs are known to be equal, so intersect their min/max/var_off */
@@ -7809,10 +8010,6 @@ static int check_cond_jmp_op(struct bpf_verifier_env *env,
 				       src_reg->var_off.value,
 				       opcode,
 				       is_jmp32);
-	} else if (reg_is_pkt_pointer_any(dst_reg) &&
-		   reg_is_pkt_pointer_any(src_reg) &&
-		   !is_jmp32) {
-		pred = is_pkt_ptr_branch_taken(dst_reg, src_reg, opcode);
 	}
 
 	if (pred >= 0) {
@@ -7903,12 +8100,6 @@ static int check_cond_jmp_op(struct bpf_verifier_env *env,
 		reg_set_min_max(&other_branch_regs[insn->dst_reg],
 					dst_reg, insn->imm, (u32)insn->imm,
 					opcode, is_jmp32);
-	}
-
-	if (dst_reg->type == SCALAR_VALUE && dst_reg->id &&
-	    !WARN_ON_ONCE(dst_reg->id != other_branch_regs[insn->dst_reg].id)) {
-		find_equal_scalars(this_branch, dst_reg);
-		find_equal_scalars(other_branch, &other_branch_regs[insn->dst_reg]);
 	}
 
 	/* detect if R == 0 where R is returned from bpf_map_lookup_elem().
