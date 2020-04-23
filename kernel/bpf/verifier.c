@@ -9779,6 +9779,7 @@ static bool reg_type_mismatch(enum bpf_reg_type src, enum bpf_reg_type prev)
 
 static int do_check(struct bpf_verifier_env *env)
 {
+	bool pop_log = !(env->log.level & BPF_LOG_LEVEL2);
 	struct bpf_verifier_state *state = env->cur_state;
 	struct bpf_insn *insns = env->prog->insnsi;
 	struct bpf_reg_state *regs;
@@ -11664,6 +11665,7 @@ static void sanitize_insn_aux_data(struct bpf_verifier_env *env)
 
 static int do_check_common(struct bpf_verifier_env *env, int subprog)
 {
+	bool pop_log = !(env->log.level & BPF_LOG_LEVEL2);
 	struct bpf_verifier_state *state;
 	struct bpf_reg_state *regs;
 	int ret, i;
@@ -11726,7 +11728,9 @@ out:
 		free_verifier_state(env->cur_state, true);
 		env->cur_state = NULL;
 	}
-	while (!pop_stack(env, NULL, NULL));
+	while (!pop_stack(env, NULL, NULL, false));
+	if (!ret && pop_log)
+		bpf_vlog_reset(&env->log, 0);
 	free_states(env);
 	if (ret)
 		/* clean aux data in case subprog was rejected */
