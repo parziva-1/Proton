@@ -112,6 +112,8 @@ enum bpf_cmd {
 	BPF_MAP_UPDATE_BATCH,
 	BPF_MAP_DELETE_BATCH,
 	BPF_LINK_CREATE,
+	BPF_LINK_GET_FD_BY_ID,
+	BPF_LINK_GET_NEXT_ID,
 };
 
 enum bpf_map_type {
@@ -223,17 +225,8 @@ enum bpf_link_type {
 	BPF_LINK_TYPE_RAW_TRACEPOINT = 1,
 	BPF_LINK_TYPE_TRACING = 2,
 	BPF_LINK_TYPE_CGROUP = 3,
-	BPF_LINK_TYPE_ITER = 4,
-	BPF_LINK_TYPE_NETNS = 5,
 
 	MAX_BPF_LINK_TYPE,
-};
-
-enum bpf_iter_link_info {
-	BPF_ITER_LINK_UNSPEC = 0,
-	BPF_ITER_LINK_MAP_FD = 1,
-
-	MAX_BPF_ITER_LINK_INFO,
 };
 
 /* cgroup-bpf attach flags used in BPF_PROG_ATTACH command
@@ -3760,19 +3753,6 @@ struct bpf_link_info {
 			__u64 cgroup_id;
 			__u32 attach_type;
 		} cgroup;
-		struct {
-			__aligned_u64 target_name; /* in/out: target_name buffer ptr */
-			__u32 target_name_len;	   /* in/out: target_name buffer len */
-			union {
-				struct {
-					__u32 map_id;
-				} map;
-			};
-		} iter;
-		struct  {
-			__u32 netns_ino;
-			__u32 attach_type;
-		} netns;
 	};
 } __attribute__((aligned(8)));
 
