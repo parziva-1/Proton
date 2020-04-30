@@ -114,6 +114,7 @@ enum bpf_cmd {
 	BPF_LINK_CREATE,
 	BPF_LINK_GET_FD_BY_ID,
 	BPF_LINK_GET_NEXT_ID,
+	BPF_ENABLE_STATS,
 };
 
 enum bpf_map_type {
@@ -414,11 +415,6 @@ enum {
  */
 #define BPF_F_QUERY_EFFECTIVE	(1U << 0)
 
-/* Flags for BPF_PROG_TEST_RUN */
-
-/* If set, run the test on the cpu specified by bpf_attr.test.cpu */
-#define BPF_F_TEST_RUN_ON_CPU	(1U << 0)
-
 /* type for BPF_ENABLE_STATS */
 enum bpf_stats_type {
 	/* enabled run_time_ns and run_cnt */
@@ -626,6 +622,11 @@ union bpf_attr {
 		__u32		attach_type;	/* attach type */
 		__u32		flags;		/* extra flags */
 	} link_create;
+
+	struct { /* struct used by BPF_ENABLE_STATS command */
+		__u32		type;
+	} enable_stats;
+
 } __attribute__((aligned(8)));
 
 /* The description below is an attempt at providing documentation to eBPF
