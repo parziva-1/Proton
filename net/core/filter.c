@@ -4715,10 +4715,11 @@ static const struct bpf_func_proto bpf_get_socket_uid_proto = {
 	.arg1_type      = ARG_PTR_TO_CTX,
 };
 
-BPF_CALL_5(bpf_setsockopt, struct bpf_sock_ops_kern *, bpf_sock,
-	   int, level, int, optname, char *, optval, int, optlen)
+#define SOCKOPT_CC_REINIT (1 << 0)
+
+static int _bpf_setsockopt(struct sock *sk, int level, int optname,
+			   char *optval, int optlen, u32 flags)
 {
-	struct sock *sk = bpf_sock->sk;
 	int ret = 0;
 
 	if (!sk_fullsock(sk))
@@ -4849,6 +4850,7 @@ BPF_CALL_5(bpf_setsockopt, struct bpf_sock_ops_kern *, bpf_sock,
 		   sk->sk_prot->setsockopt == tcp_setsockopt) {
 		if (optname == TCP_CONGESTION) {
 			char name[TCP_CA_NAME_MAX];
+			bool reinit = flags & SOCKOPT_CC_REINIT;
 
 			strncpy(name, optval, min_t(long, optlen,
 						    TCP_CA_NAME_MAX-1));
@@ -5017,7 +5019,9 @@ err_clear:
 BPF_CALL_5(bpf_sock_addr_setsockopt, struct bpf_sock_addr_kern *, ctx,
 	   int, level, int, optname, char *, optval, int, optlen)
 {
-	return _bpf_setsockopt(ctx->sk, level, optname, optval, optlen);
+	u32 flags = 0;
+	return _bpf_setsockopt(ctx->sk, level, optname, optval, optlen,
+			       flags);
 }
 
 static const struct bpf_func_proto bpf_sock_addr_setsockopt_proto = {
@@ -5051,7 +5055,11 @@ static const struct bpf_func_proto bpf_sock_addr_getsockopt_proto = {
 BPF_CALL_5(bpf_sock_ops_setsockopt, struct bpf_sock_ops_kern *, bpf_sock,
 	   int, level, int, optname, char *, optval, int, optlen)
 {
-	return _bpf_setsockopt(bpf_sock->sk, level, optname, optval, optlen);
+	u32 flags = 0;
+	if (bpf_sock->op > BPF_SOCK_OPS_NEEDS_ECN)
+		flags |= SOCKOPT_CC_REINIT;
+	return _bpf_setsockopt(bpf_sock->sk, level, optname, optval, optlen,
+			       flags);
 }
 
 static const struct bpf_func_proto bpf_sock_ops_setsockopt_proto = {
@@ -5065,99 +5073,9 @@ static const struct bpf_func_proto bpf_sock_ops_setsockopt_proto = {
 	.arg5_type	= ARG_CONST_SIZE,
 };
 
-static int bpf_sock_ops_get_syn(struct bpf_sock_ops_kern *bpf_sock,
-				int optname, const u8 **start)
-{
-	struct sk_buff *syn_skb = bpf_sock->syn_skb;
-	const u8 *hdr_start;
-	int ret;
-
-	if (syn_skb) {
-		/* sk is a request_sock here */
-
-		if (optname == TCP_BPF_SYN) {
-			hdr_start = syn_skb->data;
-			ret = tcp_hdrlen(syn_skb);
-		} else if (optname == TCP_BPF_SYN_IP) {
-			hdr_start = skb_network_header(syn_skb);
-			ret = skb_network_header_len(syn_skb) +
-				tcp_hdrlen(syn_skb);
-		} else {
-			/* optname == TCP_BPF_SYN_MAC */
-			hdr_start = skb_mac_header(syn_skb);
-			ret = skb_mac_header_len(syn_skb) +
-				skb_network_header_len(syn_skb) +
-				tcp_hdrlen(syn_skb);
-		}
-	} else {
-		struct sock *sk = bpf_sock->sk;
-		struct saved_syn *saved_syn;
-
-		if (sk->sk_state == TCP_NEW_SYN_RECV)
-			/* synack retransmit. bpf_sock->syn_skb will
-			 * not be available.  It has to resort to
-			 * saved_syn (if it is saved).
-			 */
-			saved_syn = inet_reqsk(sk)->saved_syn;
-		else
-			saved_syn = tcp_sk(sk)->saved_syn;
-
-		if (!saved_syn)
-			return -ENOENT;
-
-		if (optname == TCP_BPF_SYN) {
-			hdr_start = saved_syn->data +
-				saved_syn->mac_hdrlen +
-				saved_syn->network_hdrlen;
-			ret = saved_syn->tcp_hdrlen;
-		} else if (optname == TCP_BPF_SYN_IP) {
-			hdr_start = saved_syn->data +
-				saved_syn->mac_hdrlen;
-			ret = saved_syn->network_hdrlen +
-				saved_syn->tcp_hdrlen;
-		} else {
-			/* optname == TCP_BPF_SYN_MAC */
-
-			/* TCP_SAVE_SYN may not have saved the mac hdr */
-			if (!saved_syn->mac_hdrlen)
-				return -ENOENT;
-
-			hdr_start = saved_syn->data;
-			ret = saved_syn->mac_hdrlen +
-				saved_syn->network_hdrlen +
-				saved_syn->tcp_hdrlen;
-		}
-	}
-
-	*start = hdr_start;
-	return ret;
-}
-
 BPF_CALL_5(bpf_sock_ops_getsockopt, struct bpf_sock_ops_kern *, bpf_sock,
 	   int, level, int, optname, char *, optval, int, optlen)
 {
-	if (IS_ENABLED(CONFIG_INET) && level == SOL_TCP &&
-	    optname >= TCP_BPF_SYN && optname <= TCP_BPF_SYN_MAC) {
-		int ret, copy_len = 0;
-		const u8 *start;
-
-		ret = bpf_sock_ops_get_syn(bpf_sock, optname, &start);
-		if (ret > 0) {
-			copy_len = ret;
-			if (optlen < copy_len) {
-				copy_len = optlen;
-				ret = -ENOSPC;
-			}
-
-			memcpy(optval, start, copy_len);
-		}
-
-		/* Zero out unused buffer at the end */
-		memset(optval + copy_len, 0, optlen - copy_len);
-
-		return ret;
-	}
-
 	return _bpf_getsockopt(bpf_sock->sk, level, optname, optval, optlen);
 }
 
