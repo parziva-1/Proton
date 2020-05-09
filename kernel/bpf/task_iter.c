@@ -7,7 +7,6 @@
 #include <linux/fs.h>
 #include <linux/fdtable.h>
 #include <linux/filter.h>
-#include <linux/btf_ids.h>
 
 struct bpf_iter_seq_task_common {
 	struct pid_namespace *ns;
@@ -22,29 +21,15 @@ struct bpf_iter_seq_task_info {
 };
 
 static struct task_struct *task_seq_get_next(struct pid_namespace *ns,
-					     u32 *tid,
-					     bool skip_if_dup_files)
+					     u32 *tid)
 {
 	struct task_struct *task = NULL;
 	struct pid *pid;
 
 	rcu_read_lock();
-retry:
-	pid = find_ge_pid(*tid, ns);
-	if (pid) {
-		*tid = pid_nr_ns(pid, ns);
+	pid = idr_get_next(&ns->idr, tid);
+	if (pid)
 		task = get_pid_task(pid, PIDTYPE_PID);
-		if (!task) {
-			++*tid;
-			goto retry;
-		} else if (skip_if_dup_files && task->tgid != task->pid &&
-			   task->files == task->group_leader->files) {
-			put_task_struct(task);
-			task = NULL;
-			++*tid;
-			goto retry;
-		}
-	}
 	rcu_read_unlock();
 
 	return task;
@@ -55,12 +40,11 @@ static void *task_seq_start(struct seq_file *seq, loff_t *pos)
 	struct bpf_iter_seq_task_info *info = seq->private;
 	struct task_struct *task;
 
-	task = task_seq_get_next(info->common.ns, &info->tid, false);
+	task = task_seq_get_next(info->common.ns, &info->tid);
 	if (!task)
 		return NULL;
 
-	if (*pos == 0)
-		++*pos;
+	++*pos;
 	return task;
 }
 
@@ -72,7 +56,7 @@ static void *task_seq_next(struct seq_file *seq, void *v, loff_t *pos)
 	++*pos;
 	++info->tid;
 	put_task_struct((struct task_struct *)v);
-	task = task_seq_get_next(info->common.ns, &info->tid, false);
+	task = task_seq_get_next(info->common.ns, &info->tid);
 	if (!task)
 		return NULL;
 
@@ -136,7 +120,8 @@ struct bpf_iter_seq_task_file_info {
 };
 
 static struct file *
-task_file_seq_get_next(struct bpf_iter_seq_task_file_info *info)
+task_file_seq_get_next(struct bpf_iter_seq_task_file_info *info,
+		       struct task_struct **task, struct files_struct **fstruct)
 {
 	struct pid_namespace *ns = info->common.ns;
 	u32 curr_tid = info->tid, max_fds;
@@ -149,29 +134,26 @@ task_file_seq_get_next(struct bpf_iter_seq_task_file_info *info)
 	 * Otherwise, it does not hold any reference.
 	 */
 again:
-	if (info->task) {
-		curr_task = info->task;
-		curr_files = info->files;
+	if (*task) {
+		curr_task = *task;
+		curr_files = *fstruct;
 		curr_fd = info->fd;
 	} else {
-		curr_task = task_seq_get_next(ns, &curr_tid, true);
-		if (!curr_task) {
-			info->task = NULL;
-			info->files = NULL;
-			info->tid = curr_tid;
+		curr_task = task_seq_get_next(ns, &curr_tid);
+		if (!curr_task)
 			return NULL;
-		}
 
 		curr_files = get_files_struct(curr_task);
 		if (!curr_files) {
 			put_task_struct(curr_task);
-			curr_tid = curr_tid + 1;
+			curr_tid = ++(info->tid);
 			info->fd = 0;
 			goto again;
 		}
 
-		info->files = curr_files;
-		info->task = curr_task;
+		/* set *fstruct, *task and info->tid */
+		*fstruct = curr_files;
+		*task = curr_task;
 		if (curr_tid == info->tid) {
 			curr_fd = info->fd;
 		} else {
@@ -188,11 +170,10 @@ again:
 		f = fcheck_files(curr_files, curr_fd);
 		if (!f)
 			continue;
-		if (!get_file_rcu(f))
-			continue;
 
 		/* set info->fd */
 		info->fd = curr_fd;
+		get_file(f);
 		rcu_read_unlock();
 		return f;
 	}
@@ -201,8 +182,8 @@ again:
 	rcu_read_unlock();
 	put_files_struct(curr_files);
 	put_task_struct(curr_task);
-	info->task = NULL;
-	info->files = NULL;
+	*task = NULL;
+	*fstruct = NULL;
 	info->fd = 0;
 	curr_tid = ++(info->tid);
 	goto again;
@@ -211,13 +192,20 @@ again:
 static void *task_file_seq_start(struct seq_file *seq, loff_t *pos)
 {
 	struct bpf_iter_seq_task_file_info *info = seq->private;
+	struct files_struct *files = NULL;
+	struct task_struct *task = NULL;
 	struct file *file;
 
-	info->task = NULL;
-	info->files = NULL;
-	file = task_file_seq_get_next(info);
-	if (file && *pos == 0)
-		++*pos;
+	file = task_file_seq_get_next(info, &task, &files);
+	if (!file) {
+		info->files = NULL;
+		info->task = NULL;
+		return NULL;
+	}
+
+	++*pos;
+	info->task = task;
+	info->files = files;
 
 	return file;
 }
@@ -225,11 +213,24 @@ static void *task_file_seq_start(struct seq_file *seq, loff_t *pos)
 static void *task_file_seq_next(struct seq_file *seq, void *v, loff_t *pos)
 {
 	struct bpf_iter_seq_task_file_info *info = seq->private;
+	struct files_struct *files = info->files;
+	struct task_struct *task = info->task;
+	struct file *file;
 
 	++*pos;
 	++info->fd;
 	fput((struct file *)v);
-	return task_file_seq_get_next(info);
+	file = task_file_seq_get_next(info, &task, &files);
+	if (!file) {
+		info->files = NULL;
+		info->task = NULL;
+		return NULL;
+	}
+
+	info->task = task;
+	info->files = files;
+
+	return file;
 }
 
 struct bpf_iter__task_file {
@@ -283,7 +284,7 @@ static void task_file_seq_stop(struct seq_file *seq, void *v)
 	}
 }
 
-static int init_seq_pidns(void *priv_data, struct bpf_iter_aux_info *aux)
+static int init_seq_pidns(void *priv_data)
 {
 	struct bpf_iter_seq_task_common *common = priv_data;
 
@@ -305,57 +306,28 @@ static const struct seq_operations task_file_seq_ops = {
 	.show	= task_file_seq_show,
 };
 
-BTF_ID_LIST(btf_task_file_ids)
-BTF_ID(struct, task_struct)
-BTF_ID(struct, file)
-
-static const struct bpf_iter_seq_info task_seq_info = {
-	.seq_ops		= &task_seq_ops,
-	.init_seq_private	= init_seq_pidns,
-	.fini_seq_private	= fini_seq_pidns,
-	.seq_priv_size		= sizeof(struct bpf_iter_seq_task_info),
-};
-
-static struct bpf_iter_reg task_reg_info = {
-	.target			= "task",
-	.ctx_arg_info_size	= 1,
-	.ctx_arg_info		= {
-		{ offsetof(struct bpf_iter__task, task),
-		  PTR_TO_BTF_ID_OR_NULL },
-	},
-	.seq_info		= &task_seq_info,
-};
-
-static const struct bpf_iter_seq_info task_file_seq_info = {
-	.seq_ops		= &task_file_seq_ops,
-	.init_seq_private	= init_seq_pidns,
-	.fini_seq_private	= fini_seq_pidns,
-	.seq_priv_size		= sizeof(struct bpf_iter_seq_task_file_info),
-};
-
-static struct bpf_iter_reg task_file_reg_info = {
-	.target			= "task_file",
-	.ctx_arg_info_size	= 2,
-	.ctx_arg_info		= {
-		{ offsetof(struct bpf_iter__task_file, task),
-		  PTR_TO_BTF_ID_OR_NULL },
-		{ offsetof(struct bpf_iter__task_file, file),
-		  PTR_TO_BTF_ID_OR_NULL },
-	},
-	.seq_info		= &task_file_seq_info,
-};
-
 static int __init task_iter_init(void)
 {
+	struct bpf_iter_reg task_file_reg_info = {
+		.target			= "task_file",
+		.seq_ops		= &task_file_seq_ops,
+		.init_seq_private	= init_seq_pidns,
+		.fini_seq_private	= fini_seq_pidns,
+		.seq_priv_size		= sizeof(struct bpf_iter_seq_task_file_info),
+	};
+	struct bpf_iter_reg task_reg_info = {
+		.target			= "task",
+		.seq_ops		= &task_seq_ops,
+		.init_seq_private	= init_seq_pidns,
+		.fini_seq_private	= fini_seq_pidns,
+		.seq_priv_size		= sizeof(struct bpf_iter_seq_task_info),
+	};
 	int ret;
 
-	task_reg_info.ctx_arg_info[0].btf_id = btf_task_file_ids[0];
 	ret = bpf_iter_reg_target(&task_reg_info);
 	if (ret)
 		return ret;
 
-	task_file_reg_info.ctx_arg_info[0].btf_id = btf_task_file_ids[0];
-	task_file_reg_info.ctx_arg_info[1].btf_id = btf_task_file_ids[1];
 	return bpf_iter_reg_target(&task_file_reg_info);
 }
 late_initcall(task_iter_init);
