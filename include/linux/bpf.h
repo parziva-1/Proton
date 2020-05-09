@@ -31,6 +31,7 @@ struct seq_file;
 struct btf;
 struct btf_type;
 struct exception_table_entry;
+struct seq_operations;
 
 extern struct idr btf_idr;
 extern spinlock_t btf_idr_lock;
@@ -1186,61 +1187,19 @@ struct bpf_link *bpf_link_get_from_fd(u32 ufd);
 int bpf_obj_pin_user(u32 ufd, const char __user *pathname);
 int bpf_obj_get_user(const char __user *pathname, int flags);
 
-#define BPF_ITER_FUNC_PREFIX "bpf_iter_"
-#define DEFINE_BPF_ITER_FUNC(target, args...)			\
-	extern int bpf_iter_ ## target(args);			\
-	int __init bpf_iter_ ## target(args) { return 0; }
+typedef int (*bpf_iter_init_seq_priv_t)(void *private_data);
+typedef void (*bpf_iter_fini_seq_priv_t)(void *private_data);
 
-struct bpf_iter_aux_info {
-	struct bpf_map *map;
-};
-
-typedef int (*bpf_iter_attach_target_t)(struct bpf_prog *prog,
-					union bpf_iter_link_info *linfo,
-					struct bpf_iter_aux_info *aux);
-typedef void (*bpf_iter_detach_target_t)(struct bpf_iter_aux_info *aux);
-typedef void (*bpf_iter_show_fdinfo_t) (const struct bpf_iter_aux_info *aux,
-					struct seq_file *seq);
-typedef int (*bpf_iter_fill_link_info_t)(const struct bpf_iter_aux_info *aux,
-					 struct bpf_link_info *info);
-
-#define BPF_ITER_CTX_ARG_MAX 2
 struct bpf_iter_reg {
 	const char *target;
-	bpf_iter_attach_target_t attach_target;
-	bpf_iter_detach_target_t detach_target;
-	bpf_iter_show_fdinfo_t show_fdinfo;
-	bpf_iter_fill_link_info_t fill_link_info;
-	u32 ctx_arg_info_size;
-	struct bpf_ctx_arg_aux ctx_arg_info[BPF_ITER_CTX_ARG_MAX];
-	const struct bpf_iter_seq_info *seq_info;
+	const struct seq_operations *seq_ops;
+	bpf_iter_init_seq_priv_t init_seq_private;
+	bpf_iter_fini_seq_priv_t fini_seq_private;
+	u32 seq_priv_size;
 };
 
-struct bpf_iter_meta {
-	__bpf_md_ptr(struct seq_file *, seq);
-	u64 session_id;
-	u64 seq_num;
-};
-
-struct bpf_iter__bpf_map_elem {
-	__bpf_md_ptr(struct bpf_iter_meta *, meta);
-	__bpf_md_ptr(struct bpf_map *, map);
-	__bpf_md_ptr(void *, key);
-	__bpf_md_ptr(void *, value);
-};
-
-int bpf_iter_reg_target(const struct bpf_iter_reg *reg_info);
-void bpf_iter_unreg_target(const struct bpf_iter_reg *reg_info);
-bool bpf_iter_prog_supported(struct bpf_prog *prog);
-int bpf_iter_link_attach(const union bpf_attr *attr, struct bpf_prog *prog);
-int bpf_iter_new_fd(struct bpf_link *link);
-bool bpf_link_is_iter(struct bpf_link *link);
-struct bpf_prog *bpf_iter_get_info(struct bpf_iter_meta *meta, bool in_stop);
-int bpf_iter_run_prog(struct bpf_prog *prog, void *ctx);
-void bpf_iter_map_show_fdinfo(const struct bpf_iter_aux_info *aux,
-			      struct seq_file *seq);
-int bpf_iter_map_fill_link_info(const struct bpf_iter_aux_info *aux,
-				struct bpf_link_info *info);
+int bpf_iter_reg_target(struct bpf_iter_reg *reg_info);
+void bpf_iter_unreg_target(const char *target);
 
 int bpf_percpu_hash_copy(struct bpf_map *map, void *key, void *value);
 int bpf_percpu_array_copy(struct bpf_map *map, void *key, void *value);
