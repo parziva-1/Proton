@@ -709,8 +709,8 @@ union bpf_attr {
  * 		For tracing programs, safely attempt to read *size* bytes from
  * 		kernel space address *unsafe_ptr* and store the data in *dst*.
  *
- * 		Generally, use bpf_probe_read_user() or bpf_probe_read_kernel()
- * 		instead.
+ * 		Generally, use **bpf_probe_read_user**\ () or
+ * 		**bpf_probe_read_kernel**\ () instead.
  * 	Return
  * 		0 on success, or a negative error in case of failure.
  *
@@ -1580,11 +1580,11 @@ union bpf_attr {
  * int bpf_probe_read_str(void *dst, u32 size, const void *unsafe_ptr)
  * 	Description
  * 		Copy a NUL terminated string from an unsafe kernel address
- * 		*unsafe_ptr* to *dst*. See bpf_probe_read_kernel_str() for
+ * 		*unsafe_ptr* to *dst*. See **bpf_probe_read_kernel_str**\ () for
  * 		more details.
  *
- * 		Generally, use bpf_probe_read_user_str() or bpf_probe_read_kernel_str()
- * 		instead.
+ * 		Generally, use **bpf_probe_read_user_str**\ () or
+ * 		**bpf_probe_read_kernel_str**\ () instead.
  * 	Return
  * 		On success, the strictly positive length of the string,
  * 		including the trailing NUL character. On error, a negative
@@ -1641,6 +1641,7 @@ union bpf_attr {
  * 		The option value of length *optlen* is pointed by *optval*.
  *
  * 		*bpf_socket* should be one of the following:
+ *
  * 		* **struct bpf_sock_ops** for **BPF_PROG_TYPE_SOCK_OPS**.
  * 		* **struct bpf_sock_addr** for **BPF_CGROUP_INET4_CONNECT**
  * 		  and **BPF_CGROUP_INET6_CONNECT**.
@@ -1723,8 +1724,8 @@ union bpf_attr {
  * 		by the caller. Any higher bits in the *flags* argument must be
  * 		unset.
  *
- * 		See also bpf_redirect(), which only supports redirecting to an
- * 		ifindex, but doesn't require a map to do so.
+ * 		See also **bpf_redirect**\ (), which only supports redirecting
+ * 		to an ifindex, but doesn't require a map to do so.
  * 	Return
  * 		**XDP_REDIRECT** on success, or the value of the two lower bits
  * 		of the *flags* argument on error.
@@ -1859,6 +1860,7 @@ union bpf_attr {
  * 		*opval* and of length *optlen*.
  *
  * 		*bpf_socket* should be one of the following:
+ *
  * 		* **struct bpf_sock_ops** for **BPF_PROG_TYPE_SOCK_OPS**.
  * 		* **struct bpf_sock_addr** for **BPF_CGROUP_INET4_CONNECT**
  * 		  and **BPF_CGROUP_INET6_CONNECT**.
@@ -2969,7 +2971,7 @@ union bpf_attr {
  * 				// size, after checking its boundaries.
  * 			}
  *
- * 		In comparison, using **bpf_probe_read_user()** helper here
+ * 		In comparison, using **bpf_probe_read_user**\ () helper here
  * 		instead to read the string would require to estimate the length
  * 		at compile time, and would often result in copying more memory
  * 		than necessary.
@@ -2987,14 +2989,14 @@ union bpf_attr {
  * int bpf_probe_read_kernel_str(void *dst, u32 size, const void *unsafe_ptr)
  * 	Description
  * 		Copy a NUL terminated string from an unsafe kernel address *unsafe_ptr*
- * 		to *dst*. Same semantics as with bpf_probe_read_user_str() apply.
+ * 		to *dst*. Same semantics as with **bpf_probe_read_user_str**\ () apply.
  * 	Return
- * 		On success, the strictly positive length of the string,	including
+ * 		On success, the strictly positive length of the string, including
  * 		the trailing NUL character. On error, a negative value.
  *
  * int bpf_tcp_send_ack(void *tp, u32 rcv_nxt)
  *	Description
- *		Send out a tcp-ack. *tp* is the in-kernel struct tcp_sock.
+ *		Send out a tcp-ack. *tp* is the in-kernel struct **tcp_sock**.
  *		*rcv_nxt* is the ack_seq to be sent out.
  *	Return
  *		0 on success, or a negative error in case of failure.
@@ -3022,19 +3024,19 @@ union bpf_attr {
  * int bpf_read_branch_records(struct bpf_perf_event_data *ctx, void *buf, u32 size, u64 flags)
  *	Description
  *		For an eBPF program attached to a perf event, retrieve the
- *		branch records (struct perf_branch_entry) associated to *ctx*
- *		and store it in	the buffer pointed by *buf* up to size
+ *		branch records (**struct perf_branch_entry**) associated to *ctx*
+ *		and store it in the buffer pointed by *buf* up to size
  *		*size* bytes.
  *	Return
  *		On success, number of bytes written to *buf*. On error, a
  *		negative value.
  *
  *		The *flags* can be set to **BPF_F_GET_BRANCH_RECORDS_SIZE** to
- *		instead	return the number of bytes required to store all the
+ *		instead return the number of bytes required to store all the
  *		branch entries. If this flag is set, *buf* may be NULL.
  *
  *		**-EINVAL** if arguments invalid or **size** not a multiple
- *		of sizeof(struct perf_branch_entry).
+ *		of **sizeof**\ (**struct perf_branch_entry**\ ).
  *
  *		**-ENOENT** if architecture does not support branch records.
  *
@@ -3042,8 +3044,8 @@ union bpf_attr {
  *	Description
  *		Returns 0 on success, values for *pid* and *tgid* as seen from the current
  *		*namespace* will be returned in *nsdata*.
- *
- *		On failure, the returned value is one of the following:
+ *	Return
+ *		0 on success, or one of the following in case of failure:
  *
  *		**-EINVAL** if dev and inum supplied don't match dev_t and inode number
  *              with nsfs of current task, or if dev conversion to dev_t lost high bits.
@@ -3082,8 +3084,8 @@ union bpf_attr {
  * 		a global identifier that can be assumed unique. If *ctx* is
  * 		NULL, then the helper returns the cookie for the initial
  * 		network namespace. The cookie itself is very similar to that
- * 		of bpf_get_socket_cookie() helper, but for network namespaces
- * 		instead of sockets.
+ * 		of **bpf_get_socket_cookie**\ () helper, but for network
+ * 		namespaces instead of sockets.
  * 	Return
  * 		A 8-byte long opaque number.
  *
@@ -3118,57 +3120,66 @@ union bpf_attr {
  *
  *		The *flags* argument must be zero.
  *	Return
- *		0 on success, or a negative errno in case of failure.
+ *		0 on success, or a negative error in case of failure:
  *
- *		* **-EINVAL**		Unsupported flags specified.
- *		* **-ENOENT**		Socket is unavailable for assignment.
- *		* **-ENETUNREACH**	Socket is unreachable (wrong netns).
- *		* **-EOPNOTSUPP**	Unsupported operation, for example a
- *					call from outside of TC ingress.
- *		* **-ESOCKTNOSUPPORT**	Socket type not supported (reuseport).
+ *		**-EINVAL** if specified *flags* are not supported.
+ *
+ *		**-ENOENT** if the socket is unavailable for assignment.
+ *
+ *		**-ENETUNREACH** if the socket is unreachable (wrong netns).
+ *
+ *		**-EOPNOTSUPP** if the operation is not supported, for example
+ *		a call from outside of TC ingress.
+ *
+ *		**-ESOCKTNOSUPPORT** if the socket type is not supported
+ *		(reuseport).
  *
  * u64 bpf_ktime_get_boot_ns(void)
  * 	Description
  * 		Return the time elapsed since system boot, in nanoseconds.
  * 		Does include the time the system was suspended.
- * 		See: clock_gettime(CLOCK_BOOTTIME)
+ * 		See: **clock_gettime**\ (**CLOCK_BOOTTIME**)
  * 	Return
  * 		Current *ktime*.
  *
  * int bpf_seq_printf(struct seq_file *m, const char *fmt, u32 fmt_size, const void *data, u32 data_len)
  * 	Description
- * 		seq_printf uses seq_file seq_printf() to print out the format string.
+ * 		**bpf_seq_printf**\ () uses seq_file **seq_printf**\ () to print
+ * 		out the format string.
  * 		The *m* represents the seq_file. The *fmt* and *fmt_size* are for
  * 		the format string itself. The *data* and *data_len* are format string
- * 		arguments. The *data* are a u64 array and corresponding format string
+ * 		arguments. The *data* are a **u64** array and corresponding format string
  * 		values are stored in the array. For strings and pointers where pointees
  * 		are accessed, only the pointer values are stored in the *data* array.
- * 		The *data_len* is the *data* size in term of bytes.
+ * 		The *data_len* is the size of *data* in bytes.
  *
  *		Formats **%s**, **%p{i,I}{4,6}** requires to read kernel memory.
  *		Reading kernel memory may fail due to either invalid address or
  *		valid address but requiring a major memory fault. If reading kernel memory
  *		fails, the string for **%s** will be an empty string, and the ip
  *		address for **%p{i,I}{4,6}** will be 0. Not returning error to
- *		bpf program is consistent with what bpf_trace_printk() does for now.
+ *		bpf program is consistent with what **bpf_trace_printk**\ () does for now.
  * 	Return
- * 		0 on success, or a negative errno in case of failure.
+ * 		0 on success, or a negative error in case of failure:
  *
- *		* **-EBUSY**		Percpu memory copy buffer is busy, can try again
- *					by returning 1 from bpf program.
- *		* **-EINVAL**		Invalid arguments, or invalid/unsupported formats.
- *		* **-E2BIG**		Too many format specifiers.
- *		* **-EOVERFLOW**	Overflow happens, the same object will be tried again.
+ *		**-EBUSY** if per-CPU memory copy buffer is busy, can try again
+ *		by returning 1 from bpf program.
+ *
+ *		**-EINVAL** if arguments are invalid, or if *fmt* is invalid/unsupported.
+ *
+ *		**-E2BIG** if *fmt* contains too many format specifiers.
+ *
+ *		**-EOVERFLOW** if an overflow happened: The same object will be tried again.
  *
  * int bpf_seq_write(struct seq_file *m, const void *data, u32 len)
  * 	Description
- * 		seq_write uses seq_file seq_write() to write the data.
+ * 		**bpf_seq_write**\ () uses seq_file **seq_write**\ () to write the data.
  * 		The *m* represents the seq_file. The *data* and *len* represent the
- *		data to write in bytes.
+ * 		data to write in bytes.
  * 	Return
- * 		0 on success, or a negative errno in case of failure.
+ * 		0 on success, or a negative error in case of failure:
  *
- *		* **-EOVERFLOW**	Overflow happens, the same object will be tried again.
+ *		**-EOVERFLOW** if an overflow happened: The same object will be tried again.
  */
 #define __BPF_FUNC_MAPPER(FN)		\
 	FN(unspec),			\
