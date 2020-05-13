@@ -1336,7 +1336,7 @@ static void __mark_reg_unknown(const struct bpf_verifier_env *env,
 	reg->type = SCALAR_VALUE;
 	reg->var_off = tnum_unknown;
 	reg->frameno = 0;
-	reg->precise = env->subprog_cnt > 1 || !env->allow_ptr_leaks;
+	reg->precise = env->subprog_cnt > 1 || !env->bpf_capable;
 	__mark_reg_unbounded(reg);
 }
 
@@ -2505,7 +2505,7 @@ static int check_stack_write_fixed_off(struct bpf_verifier_env *env,
 			env->insn_aux_data[insn_idx].sanitize_stack_spill = true;
 	}
 
-	if (reg && !(off % BPF_REG_SIZE) && register_is_bounded(reg) &&
+	if (reg && size == BPF_REG_SIZE && register_is_const(reg) &&
 	    !register_is_null(reg) && env->bpf_capable) {
 		if (dst_reg != BPF_REG_FP) {
 			/* The backtracking logic can only recognize explicit
@@ -5355,47 +5355,10 @@ record_func_map(struct bpf_verifier_env *env, struct bpf_call_arg_meta *meta,
 
 	if (!BPF_MAP_PTR(aux->map_ptr_state))
 		bpf_map_ptr_store(aux, meta->map_ptr,
-				  meta->map_ptr->unpriv_array);
+				  !meta->map_ptr->bypass_spec_v1);
 	else if (BPF_MAP_PTR(aux->map_ptr_state) != meta->map_ptr)
 		bpf_map_ptr_store(aux, BPF_MAP_PTR_POISON,
 				  !meta->map_ptr->bypass_spec_v1);
-	return 0;
-}
-
-static int
-record_func_key(struct bpf_verifier_env *env, struct bpf_call_arg_meta *meta,
-		int func_id, int insn_idx)
-{
-	struct bpf_insn_aux_data *aux = &env->insn_aux_data[insn_idx];
-	struct bpf_reg_state *regs = cur_regs(env), *reg;
-	struct bpf_map *map = meta->map_ptr;
-	u64 val, max;
-	int err;
-
-	if (func_id != BPF_FUNC_tail_call)
-		return 0;
-	if (!map || map->map_type != BPF_MAP_TYPE_PROG_ARRAY) {
-		verbose(env, "kernel subsystem misconfigured verifier\n");
-		return -EINVAL;
-	}
-
-	reg = &regs[BPF_REG_3];
-	val = reg->var_off.value;
-	max = map->max_entries;
-
-	if (!(register_is_const(reg) && val < max)) {
-		bpf_map_key_store(aux, BPF_MAP_KEY_POISON);
-		return 0;
-	}
-
-	err = mark_chain_precision(env, BPF_REG_3);
-	if (err)
-		return err;
-	if (bpf_map_key_unseen(aux))
-		bpf_map_key_store(aux, val);
-	else if (!bpf_map_key_poisoned(aux) &&
-		  bpf_map_key_immediate(aux) != val)
-		bpf_map_key_store(aux, BPF_MAP_KEY_POISON);
 	return 0;
 }
 
@@ -11421,7 +11384,7 @@ static int fixup_bpf_calls(struct bpf_verifier_env *env)
 			insn->code = BPF_JMP | BPF_TAIL_CALL;
 
 			aux = &env->insn_aux_data[i + delta];
-			if (env->allow_ptr_leaks && !expect_blinding &&
+			if (env->bpf_capable && !expect_blinding &&
 			    prog->jit_requested &&
 			    !bpf_map_key_poisoned(aux) &&
 			    !bpf_map_ptr_poisoned(aux) &&
@@ -12169,8 +12132,6 @@ int bpf_check(struct bpf_prog **prog, union bpf_attr *attr,
 	env->ops = bpf_verifier_ops[env->prog->type];
 	is_priv = bpf_capable();
 
-	bpf_get_btf_vmlinux();
-
 	if (!btf_vmlinux && IS_ENABLED(CONFIG_DEBUG_INFO_BTF)) {
 		mutex_lock(&bpf_verifier_lock);
 		if (!btf_vmlinux)
@@ -12218,8 +12179,6 @@ int bpf_check(struct bpf_prog **prog, union bpf_attr *attr,
 		env->strict_alignment = false;
 
 	env->allow_ptr_leaks = bpf_allow_ptr_leaks();
-	env->allow_uninit_stack = bpf_allow_uninit_stack();
-	env->allow_ptr_to_map_access = bpf_allow_ptr_to_map_access();
 	env->bypass_spec_v1 = bpf_bypass_spec_v1();
 	env->bypass_spec_v4 = bpf_bypass_spec_v4();
 	env->bpf_capable = bpf_capable();

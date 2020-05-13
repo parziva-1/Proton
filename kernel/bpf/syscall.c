@@ -2109,7 +2109,7 @@ static int bpf_prog_load(union bpf_attr *attr, union bpf_attr __user *uattr)
 	    !bpf_capable())
 		return -EPERM;
 
-	if (is_net_admin_prog_type(type) && !capable(CAP_NET_ADMIN) && !capable(CAP_SYS_ADMIN))
+	if (is_net_admin_prog_type(type) && !capable(CAP_NET_ADMIN))
 		return -EPERM;
 	if (is_perfmon_prog_type(type) && !perfmon_capable())
 		return -EPERM;
@@ -3282,6 +3282,8 @@ static int bpf_prog_detach(const union bpf_attr *attr)
 	case BPF_PROG_TYPE_LIRC_MODE2:
 		return lirc_prog_detach(attr);
 	case BPF_PROG_TYPE_FLOW_DISSECTOR:
+		if (!capable(CAP_NET_ADMIN))
+			return -EPERM;
 		return skb_flow_dissector_bpf_prog_detach(attr);
 	case BPF_PROG_TYPE_CGROUP_DEVICE:
 	case BPF_PROG_TYPE_CGROUP_SKB:
@@ -4254,9 +4256,6 @@ static int link_create(union bpf_attr *attr)
 	struct bpf_prog *prog;
 	int ret;
 
-	if (!capable(CAP_NET_ADMIN))
-		return -EPERM;
-
 	if (CHECK_ATTR(BPF_LINK_CREATE))
 		return -EINVAL;
 
@@ -4304,9 +4303,6 @@ static int link_update(union bpf_attr *attr)
 	struct bpf_link *link;
 	u32 flags;
 	int ret;
-
-	if (!capable(CAP_NET_ADMIN))
-		return -EPERM;
 
 	if (CHECK_ATTR(BPF_LINK_UPDATE))
 		return -EINVAL;
