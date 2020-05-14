@@ -6807,10 +6807,6 @@ cg_skb_func_proto(enum bpf_func_id func_id, const struct bpf_prog *prog)
 		return &bpf_skb_cgroup_id_proto;
 	case BPF_FUNC_skb_ancestor_cgroup_id:
 		return &bpf_skb_ancestor_cgroup_id_proto;
-	case BPF_FUNC_sk_cgroup_id:
-		return &bpf_sk_cgroup_id_proto;
-	case BPF_FUNC_sk_ancestor_cgroup_id:
-		return &bpf_sk_ancestor_cgroup_id_proto;
 #endif
 #ifdef CONFIG_INET
 	case BPF_FUNC_sk_lookup_tcp:
