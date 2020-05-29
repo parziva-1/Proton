@@ -60,12 +60,18 @@ struct xdp_dev_bulk_queue {
 	unsigned int count;
 };
 
+/* DEVMAP values */
+struct bpf_devmap_val {
+	u32 ifindex;   /* device index */
+};
+
 struct bpf_dtab_netdev {
 	struct net_device *dev; /* must be first member, due to tracepoint */
 	struct hlist_node index_hlist;
 	struct bpf_dtab *dtab;
 	struct rcu_head rcu;
 	unsigned int idx;
+	struct bpf_devmap_val val;
 };
 
 struct bpf_dtab {
@@ -556,28 +562,15 @@ static struct bpf_dtab_netdev *__dev_map_alloc_node(struct net *net,
 	if (!dev)
 		return ERR_PTR(-ENOMEM);
 
-	dev->dev = dev_get_by_index(net, ifindex);
-	if (!dev->dev) {
-		kfree(dev);
-		return ERR_PTR(-EINVAL);
-	}
+	dev->dev = dev_get_by_index(net, val->ifindex);
+	if (!dev->dev)
+		goto err_out;
 
 	dev->idx = idx;
 	dev->dtab = dtab;
-	if (prog) {
-		dev->xdp_prog = prog;
-		dev->val.bpf_prog.id = prog->aux->id;
-	} else {
-		dev->xdp_prog = NULL;
-		dev->val.bpf_prog.id = 0;
-	}
 	dev->val.ifindex = val->ifindex;
 
 	return dev;
-err_put_prog:
-	bpf_prog_put(prog);
-err_put_dev:
-	dev_put(dev->dev);
 err_out:
 	kfree(dev);
 	return ERR_PTR(-EINVAL);
@@ -588,7 +581,7 @@ static int __dev_map_update_elem(struct net *net, struct bpf_map *map,
 {
 	struct bpf_dtab *dtab = container_of(map, struct bpf_dtab, map);
 	struct bpf_dtab_netdev *dev, *old_dev;
-	struct bpf_devmap_val val = {};
+	struct bpf_devmap_val val = { };
 	u32 i = *(u32 *)key;
 
 	if (unlikely(map_flags > BPF_EXIST))
@@ -635,7 +628,7 @@ static int __dev_map_hash_update_elem(struct net *net, struct bpf_map *map,
 {
 	struct bpf_dtab *dtab = container_of(map, struct bpf_dtab, map);
 	struct bpf_dtab_netdev *dev, *old_dev;
-	struct bpf_devmap_val val = {};
+	struct bpf_devmap_val val = { };
 	u32 idx = *(u32 *)key;
 	unsigned long flags;
 	int err = -EEXIST;
