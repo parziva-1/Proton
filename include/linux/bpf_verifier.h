@@ -55,6 +55,8 @@ struct bpf_reg_state {
 
 		u32 btf_id; /* for PTR_TO_BTF_ID */
 
+		u32 mem_size; /* for PTR_TO_MEM | PTR_TO_MEM_OR_NULL */
+
 		/* Max size from any of the above. */
 		unsigned long raw;
 	};
