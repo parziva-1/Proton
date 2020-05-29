@@ -5327,20 +5327,13 @@ static int generic_xdp_install(struct net_device *dev, struct netdev_bpf *xdp)
 	if (new) {
 		u32 i;
 
-		mutex_lock(&new->aux->used_maps_mutex);
-
 		/* generic XDP does not work with DEVMAPs that can
 		 * have a bpf_prog installed on an entry
 		 */
 		for (i = 0; i < new->aux->used_map_cnt; i++) {
-			if (dev_map_can_have_prog(new->aux->used_maps[i]) ||
-			    cpu_map_prog_allowed(new->aux->used_maps[i])) {
-				mutex_unlock(&new->aux->used_maps_mutex);
+			if (dev_map_can_have_prog(new->aux->used_maps[i]))
 				return -EINVAL;
-			}
 		}
-
-		mutex_unlock(&new->aux->used_maps_mutex);
 	}
 
 	switch (xdp->command) {
@@ -9064,10 +9057,44 @@ int dev_change_xdp_fd(struct net_device *dev, struct netlink_ext_ack *extack,
 	ASSERT_RTNL();
 
 	if (fd >= 0) {
-		new_prog = bpf_prog_get_type_dev(fd, BPF_PROG_TYPE_XDP,
-						 mode != XDP_MODE_SKB);
-		if (IS_ERR(new_prog))
-			return PTR_ERR(new_prog);
+		u32 prog_id;
+
+		if (!offload && __dev_xdp_query(dev, bpf_chk, XDP_QUERY_PROG)) {
+			NL_SET_ERR_MSG(extack, "native and generic XDP can't be active at the same time");
+			return -EEXIST;
+		}
+
+		prog_id = __dev_xdp_query(dev, bpf_op, query);
+		if ((flags & XDP_FLAGS_UPDATE_IF_NOEXIST) && prog_id) {
+			NL_SET_ERR_MSG(extack, "XDP program already attached");
+			return -EBUSY;
+		}
+
+		prog = bpf_prog_get_type_dev(fd, BPF_PROG_TYPE_XDP,
+					     bpf_op == ops->ndo_bpf);
+		if (IS_ERR(prog))
+			return PTR_ERR(prog);
+
+		if (!offload && bpf_prog_is_dev_bound(prog->aux)) {
+			NL_SET_ERR_MSG(extack, "using device-bound program without HW_MODE flag is not supported");
+			bpf_prog_put(prog);
+			return -EINVAL;
+		}
+
+		if (prog->expected_attach_type == BPF_XDP_DEVMAP) {
+			NL_SET_ERR_MSG(extack, "BPF_XDP_DEVMAP programs can not be attached to a device");
+			bpf_prog_put(prog);
+			return -EINVAL;
+		}
+
+		/* prog->aux->id may be 0 for orphaned device-bound progs */
+		if (prog->aux->id && prog->aux->id == prog_id) {
+			bpf_prog_put(prog);
+			return 0;
+		}
+	} else {
+		if (!__dev_xdp_query(dev, bpf_op, query))
+			return 0;
 	}
 
 	if (expected_fd >= 0) {
