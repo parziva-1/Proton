@@ -4734,6 +4734,9 @@ static const struct bpf_func_proto bpf_get_socket_uid_proto = {
 static int _bpf_setsockopt(struct sock *sk, int level, int optname,
 			   char *optval, int optlen, u32 flags)
 {
+	char devname[IFNAMSIZ];
+	struct net *net;
+	int ifindex;
 	int ret = 0;
 
 	if (!sk_fullsock(sk))
@@ -4788,6 +4791,8 @@ static int _bpf_setsockopt(struct sock *sk, int level, int optname,
 			}
 			break;
 		case SO_BINDTODEVICE:
+			ret = -ENOPROTOOPT;
+#ifdef CONFIG_NETDEVICES
 			optlen = min_t(long, optlen, IFNAMSIZ - 1);
 			strncpy(devname, optval, optlen);
 			devname[optlen] = 0;
@@ -4806,11 +4811,7 @@ static int _bpf_setsockopt(struct sock *sk, int level, int optname,
 				dev_put(dev);
 			}
 			ret = sock_bindtoindex(sk, ifindex, false);
-			break;
-		case SO_KEEPALIVE:
-			if (sk->sk_prot->keepalive)
-				sk->sk_prot->keepalive(sk, valbool);
-			sock_valbool_flag(sk, SOCK_KEEPOPEN, valbool);
+#endif
 			break;
 		default:
 			ret = -EINVAL;
