@@ -13,7 +13,92 @@
 #include <uapi/linux/btf.h>
 #include <linux/btf_ids.h>
 
-DEFINE_BPF_STORAGE_CACHE(sk_cache);
+#define SK_STORAGE_CREATE_FLAG_MASK					\
+	(BPF_F_NO_PREALLOC | BPF_F_CLONE)
+
+struct bucket {
+	struct hlist_head list;
+	raw_spinlock_t lock;
+};
+
+/* Thp map is not the primary owner of a bpf_sk_storage_elem.
+ * Instead, the sk->sk_bpf_storage is.
+ *
+ * The map (bpf_sk_storage_map) is for two purposes
+ * 1. Define the size of the "sk local storage".  It is
+ *    the map's value_size.
+ *
+ * 2. Maintain a list to keep track of all elems such
+ *    that they can be cleaned up during the map destruction.
+ *
+ * When a bpf local storage is being looked up for a
+ * particular sk,  the "bpf_map" pointer is actually used
+ * as the "key" to search in the list of elem in
+ * sk->sk_bpf_storage.
+ *
+ * Hence, consider sk->sk_bpf_storage is the mini-map
+ * with the "bpf_map" pointer as the searching key.
+ */
+struct bpf_sk_storage_map {
+	struct bpf_map map;
+	/* Lookup elem does not require accessing the map.
+	 *
+	 * Updating/Deleting requires a bucket lock to
+	 * link/unlink the elem from the map.  Having
+	 * multiple buckets to improve contention.
+	 */
+	struct bucket *buckets;
+	u32 bucket_log;
+	u16 elem_size;
+	u16 cache_idx;
+};
+
+struct bpf_sk_storage_data {
+	/* smap is used as the searching key when looking up
+	 * from sk->sk_bpf_storage.
+	 *
+	 * Put it in the same cacheline as the data to minimize
+	 * the number of cachelines access during the cache hit case.
+	 */
+	struct bpf_sk_storage_map __rcu *smap;
+	u8 data[0] __aligned(8);
+};
+
+/* Linked to bpf_sk_storage and bpf_sk_storage_map */
+struct bpf_sk_storage_elem {
+	struct hlist_node map_node;	/* Linked to bpf_sk_storage_map */
+	struct hlist_node snode;	/* Linked to bpf_sk_storage */
+	struct bpf_sk_storage __rcu *sk_storage;
+	struct rcu_head rcu;
+	/* 8 bytes hole */
+	/* The data is stored in aother cacheline to minimize
+	 * the number of cachelines access during a cache hit.
+	 */
+	struct bpf_sk_storage_data sdata ____cacheline_aligned;
+};
+
+#define SELEM(_SDATA) container_of((_SDATA), struct bpf_sk_storage_elem, sdata)
+#define SDATA(_SELEM) (&(_SELEM)->sdata)
+#define BPF_SK_STORAGE_CACHE_SIZE	16
+
+static DEFINE_SPINLOCK(cache_idx_lock);
+static u64 cache_idx_usage_counts[BPF_SK_STORAGE_CACHE_SIZE];
+
+struct bpf_sk_storage {
+	struct bpf_sk_storage_data __rcu *cache[BPF_SK_STORAGE_CACHE_SIZE];
+	struct hlist_head list;	/* List of bpf_sk_storage_elem */
+	struct sock *sk;	/* The sk that owns the the above "list" of
+				 * bpf_sk_storage_elem.
+				 */
+	struct rcu_head rcu;
+	raw_spinlock_t lock;	/* Protect adding/removing from the "list" */
+};
+
+static struct bucket *select_bucket(struct bpf_sk_storage_map *smap,
+				    struct bpf_sk_storage_elem *selem)
+{
+	return &smap->buckets[hash_ptr(selem, smap->bucket_log)];
+}
 
 static int omem_charge(struct sock *sk, unsigned int size)
 {
@@ -52,6 +137,37 @@ static int sk_storage_delete(struct sock *sk, struct bpf_map *map)
 	bpf_selem_unlink(SELEM(sdata));
 
 	return 0;
+}
+
+static u16 cache_idx_get(void)
+{
+	u64 min_usage = U64_MAX;
+	u16 i, res = 0;
+
+	spin_lock(&cache_idx_lock);
+
+	for (i = 0; i < BPF_SK_STORAGE_CACHE_SIZE; i++) {
+		if (cache_idx_usage_counts[i] < min_usage) {
+			min_usage = cache_idx_usage_counts[i];
+			res = i;
+
+			/* Found a free cache_idx */
+			if (!min_usage)
+				break;
+		}
+	}
+	cache_idx_usage_counts[res]++;
+
+	spin_unlock(&cache_idx_lock);
+
+	return res;
+}
+
+static void cache_idx_free(u16 idx)
+{
+	spin_lock(&cache_idx_lock);
+	cache_idx_usage_counts[idx]--;
+	spin_unlock(&cache_idx_lock);
 }
 
 /* Called by __sk_destruct() & bpf_sk_storage_clone() */
@@ -98,9 +214,55 @@ static void sk_storage_map_free(struct bpf_map *map)
 {
 	struct bpf_local_storage_map *smap;
 
-	smap = (struct bpf_local_storage_map *)map;
-	bpf_local_storage_cache_idx_free(&sk_cache, smap->cache_idx);
-	bpf_local_storage_map_free(smap);
+	smap = (struct bpf_sk_storage_map *)map;
+
+	cache_idx_free(smap->cache_idx);
+
+	/* Note that this map might be concurrently cloned from
+	 * bpf_sk_storage_clone. Wait for any existing bpf_sk_storage_clone
+	 * RCU read section to finish before proceeding. New RCU
+	 * read sections should be prevented via bpf_map_inc_not_zero.
+	 */
+	synchronize_rcu();
+
+	/* bpf prog and the userspace can no longer access this map
+	 * now.  No new selem (of this map) can be added
+	 * to the sk->sk_bpf_storage or to the map bucket's list.
+	 *
+	 * The elem of this map can be cleaned up here
+	 * or
+	 * by bpf_sk_storage_free() during __sk_destruct().
+	 */
+	for (i = 0; i < (1U << smap->bucket_log); i++) {
+		b = &smap->buckets[i];
+
+		rcu_read_lock();
+		/* No one is adding to b->list now */
+		while ((selem = hlist_entry_safe(rcu_dereference_raw(hlist_first_rcu(&b->list)),
+						 struct bpf_sk_storage_elem,
+						 map_node))) {
+			selem_unlink(selem);
+			cond_resched_rcu();
+		}
+		rcu_read_unlock();
+	}
+
+	/* bpf_sk_storage_free() may still need to access the map.
+	 * e.g. bpf_sk_storage_free() has unlinked selem from the map
+	 * which then made the above while((selem = ...)) loop
+	 * exited immediately.
+	 *
+	 * However, the bpf_sk_storage_free() still needs to access
+	 * the smap->elem_size to do the uncharging in
+	 * __selem_unlink_sk().
+	 *
+	 * Hence, wait another rcu grace period for the
+	 * bpf_sk_storage_free() to finish.
+	 */
+	synchronize_rcu();
+
+	kvfree(smap->buckets);
+	kfree(map);
 }
 
 /* U16_MAX is much more than enough for sk local storage
@@ -163,8 +325,7 @@ static struct bpf_map *bpf_sk_storage_map_alloc(union bpf_attr *attr)
 	}
 
 	smap->elem_size = sizeof(struct bpf_sk_storage_elem) + attr->value_size;
-	smap->cache_idx = (unsigned int)atomic_inc_return(&cache_idx) %
-		BPF_SK_STORAGE_CACHE_SIZE;
+	smap->cache_idx = cache_idx_get();
 
 	smap->cache_idx = bpf_local_storage_cache_idx_get(&sk_cache);
 	return &smap->map;
