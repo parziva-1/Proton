@@ -1102,6 +1102,21 @@ static const struct file_operations kprobe_profile_ops = {
 
 /* Return the length of string -- including null terminal byte */
 static nokprobe_inline int
+fetch_store_strlen(unsigned long addr)
+{
+	int ret, len = 0;
+	u8 c;
+
+	do {
+		ret = copy_from_kernel_nofault(&c, (u8 *)addr + len, 1);
+		len++;
+	} while (c && ret == 0 && len < MAX_STRING_SIZE);
+
+	return (ret < 0) ? ret : len;
+}
+
+/* Return the length of string -- including null terminal byte */
+static nokprobe_inline int
 fetch_store_strlen_user(unsigned long addr)
 {
 	const void __user *uaddr =  (__force const void __user *)addr;
@@ -1151,6 +1166,12 @@ fetch_store_string_user(unsigned long addr, void *dest, void *base)
 		*(u32 *)dest = make_data_loc(ret, __dest - base);
 
 	return ret;
+}
+
+static nokprobe_inline int
+probe_mem_read(void *dest, void *src, size_t size)
+{
+	return copy_from_kernel_nofault(dest, src, size);
 }
 
 static nokprobe_inline int
