@@ -1651,6 +1651,7 @@ htab_lru_map_lookup_and_delete_batch(struct bpf_map *map,
 						  true, false);
 }
 
+static int htab_map_btf_id;
 const struct bpf_map_ops htab_map_ops = {
 	.map_meta_equal = bpf_map_meta_equal,
 	.map_alloc_check = htab_map_alloc_check,
@@ -1663,6 +1664,8 @@ const struct bpf_map_ops htab_map_ops = {
 	.map_gen_lookup = htab_map_gen_lookup,
 	.map_seq_show_elem = htab_map_seq_show_elem,
 	BATCH_OPS(htab),
+	.map_btf_name = "bpf_htab",
+	.map_btf_id = &htab_map_btf_id,
 };
 
 static int htab_lru_map_btf_id;
