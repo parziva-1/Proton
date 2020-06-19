@@ -1682,6 +1682,8 @@ const struct bpf_map_ops htab_lru_map_ops = {
 	.map_gen_lookup = htab_lru_map_gen_lookup,
 	.map_seq_show_elem = htab_map_seq_show_elem,
 	BATCH_OPS(htab_lru),
+	.map_btf_name = "bpf_htab",
+	.map_btf_id = &htab_lru_map_btf_id,
 };
 
 /* Called from eBPF program */
@@ -1798,6 +1800,8 @@ const struct bpf_map_ops htab_percpu_map_ops = {
 	.map_delete_elem = htab_map_delete_elem,
 	.map_seq_show_elem = htab_percpu_map_seq_show_elem,
 	BATCH_OPS(htab_percpu),
+	.map_btf_name = "bpf_htab",
+	.map_btf_id = &htab_percpu_map_btf_id,
 };
 
 static int htab_lru_percpu_map_btf_id;
@@ -1812,6 +1816,8 @@ const struct bpf_map_ops htab_lru_percpu_map_ops = {
 	.map_delete_elem = htab_lru_map_delete_elem,
 	.map_seq_show_elem = htab_percpu_map_seq_show_elem,
 	BATCH_OPS(htab_lru_percpu),
+	.map_btf_name = "bpf_htab",
+	.map_btf_id = &htab_lru_percpu_map_btf_id,
 };
 
 static int fd_htab_map_alloc_check(union bpf_attr *attr)

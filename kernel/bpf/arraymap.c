@@ -530,7 +530,6 @@ const struct bpf_map_ops percpu_array_map_ops = {
 	.map_check_btf = array_map_check_btf,
 	.map_btf_name = "bpf_array",
 	.map_btf_id = &percpu_array_map_btf_id,
-	.iter_seq_info = &iter_seq_info,
 };
 
 static int fd_array_map_alloc_check(union bpf_attr *attr)
@@ -875,6 +874,7 @@ static void prog_array_map_free(struct bpf_map *map)
 	fd_array_map_free(map);
 }
 
+static int prog_array_map_btf_id;
 const struct bpf_map_ops prog_array_map_ops = {
 	.map_alloc_check = fd_array_map_alloc_check,
 	.map_alloc = prog_array_map_alloc,
@@ -971,13 +971,6 @@ static void perf_event_fd_array_release(struct bpf_map *map,
 			fd_array_map_delete_elem(map, &i);
 	}
 	rcu_read_unlock();
-}
-
-static void perf_event_fd_array_map_free(struct bpf_map *map)
-{
-	if (map->map_flags & BPF_F_PRESERVE_ELEMS)
-		bpf_fd_array_map_clear(map);
-	fd_array_map_free(map);
 }
 
 static int perf_event_array_map_btf_id;

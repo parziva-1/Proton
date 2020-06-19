@@ -369,28 +369,6 @@ BPF_CALL_2(bpf_sk_storage_delete, struct bpf_map *, map, struct sock *, sk)
 	return -ENOENT;
 }
 
-static int sk_storage_charge(struct bpf_local_storage_map *smap,
-			     void *owner, u32 size)
-{
-	return omem_charge(owner, size);
-}
-
-static void sk_storage_uncharge(struct bpf_local_storage_map *smap,
-				void *owner, u32 size)
-{
-	struct sock *sk = owner;
-
-	atomic_sub(size, &sk->sk_omem_alloc);
-}
-
-static struct bpf_local_storage __rcu **
-sk_storage_ptr(void *owner)
-{
-	struct sock *sk = owner;
-
-	return &sk->sk_bpf_storage;
-}
-
 static int sk_storage_map_btf_id;
 const struct bpf_map_ops sk_storage_map_ops = {
 	.map_meta_equal = bpf_map_meta_equal,
@@ -401,12 +379,9 @@ const struct bpf_map_ops sk_storage_map_ops = {
 	.map_lookup_elem = bpf_fd_sk_storage_lookup_elem,
 	.map_update_elem = bpf_fd_sk_storage_update_elem,
 	.map_delete_elem = bpf_fd_sk_storage_delete_elem,
-	.map_check_btf = bpf_local_storage_map_check_btf,
-	.map_btf_name = "bpf_local_storage_map",
+	.map_check_btf = bpf_sk_storage_map_check_btf,
+	.map_btf_name = "bpf_sk_storage_map",
 	.map_btf_id = &sk_storage_map_btf_id,
-	.map_local_storage_charge = sk_storage_charge,
-	.map_local_storage_uncharge = sk_storage_uncharge,
-	.map_owner_storage_ptr = sk_storage_ptr,
 };
 
 const struct bpf_func_proto bpf_sk_storage_get_proto = {
