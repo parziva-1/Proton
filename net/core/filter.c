@@ -75,37 +75,6 @@
 #include <net/ipv6_stubs.h>
 #include <net/bpf_sk_storage.h>
 #include <net/transp_v6.h>
-#include <linux/btf_ids.h>
-#include <net/tls.h>
-
-/* Keep the struct bpf_fib_lookup small so that it fits into a cacheline */
-static_assert(sizeof(struct bpf_fib_lookup) == 64, "struct bpf_fib_lookup size check");
-
-static const struct bpf_func_proto *
-bpf_sk_base_func_proto(enum bpf_func_id func_id);
-
-int copy_bpf_fprog_from_user(struct sock_fprog *dst, sockptr_t src, int len)
-{
-	if (in_compat_syscall()) {
-		struct compat_sock_fprog f32;
-
-		if (len != sizeof(f32))
-			return -EINVAL;
-		if (copy_from_sockptr(&f32, src, sizeof(f32)))
-			return -EFAULT;
-		memset(dst, 0, sizeof(*dst));
-		dst->len = f32.len;
-		dst->filter = compat_ptr(f32.filter);
-	} else {
-		if (len != sizeof(*dst))
-			return -EINVAL;
-		if (copy_from_sockptr(dst, src, sizeof(*dst)))
-			return -EFAULT;
-	}
-
-	return 0;
-}
-EXPORT_SYMBOL_GPL(copy_bpf_fprog_from_user);
 
 /**
  *	sk_filter_trim_cap - run a packet through a socket filter
@@ -10174,4 +10143,65 @@ const struct bpf_func_proto bpf_skc_to_tcp6_sock_proto = {
 	.arg1_type		= ARG_PTR_TO_BTF_ID,
 	.check_btf_id		= check_arg_btf_id,
 	.ret_btf_id		= &btf_sock_ids[BTF_SOCK_TYPE_TCP6],
+};
+
+BPF_CALL_1(bpf_skc_to_tcp_sock, struct sock *, sk)
+{
+	if (sk_fullsock(sk) && sk->sk_protocol == IPPROTO_TCP)
+		return (unsigned long)sk;
+
+	return (unsigned long)NULL;
+}
+
+const struct bpf_func_proto bpf_skc_to_tcp_sock_proto = {
+	.func			= bpf_skc_to_tcp_sock,
+	.gpl_only		= false,
+	.ret_type		= RET_PTR_TO_BTF_ID_OR_NULL,
+	.arg1_type		= ARG_PTR_TO_BTF_ID,
+	.check_btf_id		= check_arg_btf_id,
+	.ret_btf_id		= &btf_sock_ids[BTF_SOCK_TYPE_TCP],
+};
+
+BPF_CALL_1(bpf_skc_to_tcp_timewait_sock, struct sock *, sk)
+{
+	if (sk->sk_prot == &tcp_prot && sk->sk_state == TCP_TIME_WAIT)
+		return (unsigned long)sk;
+
+#if IS_BUILTIN(CONFIG_IPV6)
+	if (sk->sk_prot == &tcpv6_prot && sk->sk_state == TCP_TIME_WAIT)
+		return (unsigned long)sk;
+#endif
+
+	return (unsigned long)NULL;
+}
+
+const struct bpf_func_proto bpf_skc_to_tcp_timewait_sock_proto = {
+	.func			= bpf_skc_to_tcp_timewait_sock,
+	.gpl_only		= false,
+	.ret_type		= RET_PTR_TO_BTF_ID_OR_NULL,
+	.arg1_type		= ARG_PTR_TO_BTF_ID,
+	.check_btf_id		= check_arg_btf_id,
+	.ret_btf_id		= &btf_sock_ids[BTF_SOCK_TYPE_TCP_TW],
+};
+
+BPF_CALL_1(bpf_skc_to_tcp_request_sock, struct sock *, sk)
+{
+	if (sk->sk_prot == &tcp_prot  && sk->sk_state == TCP_NEW_SYN_RECV)
+		return (unsigned long)sk;
+
+#if IS_BUILTIN(CONFIG_IPV6)
+	if (sk->sk_prot == &tcpv6_prot && sk->sk_state == TCP_NEW_SYN_RECV)
+		return (unsigned long)sk;
+#endif
+
+	return (unsigned long)NULL;
+}
+
+const struct bpf_func_proto bpf_skc_to_tcp_request_sock_proto = {
+	.func			= bpf_skc_to_tcp_request_sock,
+	.gpl_only		= false,
+	.ret_type		= RET_PTR_TO_BTF_ID_OR_NULL,
+	.arg1_type		= ARG_PTR_TO_BTF_ID,
+	.check_btf_id		= check_arg_btf_id,
+	.ret_btf_id		= &btf_sock_ids[BTF_SOCK_TYPE_TCP_REQ],
 };
