@@ -3114,7 +3114,7 @@ static struct pernet_operations __net_initdata tcp_sk_ops = {
 DEFINE_BPF_ITER_FUNC(tcp, struct bpf_iter_meta *meta,
 		     struct sock_common *sk_common, uid_t uid)
 
-static int bpf_iter_init_tcp(void *priv_data, struct bpf_iter_aux_info *aux)
+static int bpf_iter_init_tcp(void *priv_data)
 {
 	struct tcp_iter_state *st = priv_data;
 	struct tcp_seq_afinfo *afinfo;
@@ -3126,7 +3126,7 @@ static int bpf_iter_init_tcp(void *priv_data, struct bpf_iter_aux_info *aux)
 
 	afinfo->family = AF_UNSPEC;
 	st->bpf_seq_afinfo = afinfo;
-	ret = bpf_iter_init_seq_net(priv_data, aux);
+	ret = bpf_iter_init_seq_net(priv_data);
 	if (ret)
 		kfree(afinfo);
 	return ret;
@@ -3140,26 +3140,21 @@ static void bpf_iter_fini_tcp(void *priv_data)
 	bpf_iter_fini_seq_net(priv_data);
 }
 
-static const struct bpf_iter_seq_info tcp_seq_info = {
+static const struct bpf_iter_reg tcp_reg_info = {
+	.target			= "tcp",
 	.seq_ops		= &bpf_iter_tcp_seq_ops,
 	.init_seq_private	= bpf_iter_init_tcp,
 	.fini_seq_private	= bpf_iter_fini_tcp,
 	.seq_priv_size		= sizeof(struct tcp_iter_state),
-};
-
-static struct bpf_iter_reg tcp_reg_info = {
-	.target			= "tcp",
 	.ctx_arg_info_size	= 1,
 	.ctx_arg_info		= {
 		{ offsetof(struct bpf_iter__tcp, sk_common),
 		  PTR_TO_BTF_ID_OR_NULL },
 	},
-	.seq_info		= &tcp_seq_info,
 };
 
 static void __init bpf_iter_register(void)
 {
-	tcp_reg_info.ctx_arg_info[0].btf_id = btf_sock_ids[BTF_SOCK_TYPE_SOCK_COMMON];
 	if (bpf_iter_reg_target(&tcp_reg_info))
 		pr_warn("Warning: could not register bpf iterator tcp\n");
 }
