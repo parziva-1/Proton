@@ -11138,7 +11138,6 @@ static int jit_subprogs(struct bpf_verifier_env *env)
 				num_exentries++;
 		}
 		func[i]->aux->num_exentries = num_exentries;
-		func[i]->aux->tail_call_reachable = env->subprog_info[i].tail_call_reachable;
 		func[i] = bpf_int_jit_compile(func[i]);
 		if (!func[i]->jited) {
 			err = -ENOTSUPP;
