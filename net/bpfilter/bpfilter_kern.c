@@ -18,11 +18,10 @@ static void shutdown_umh(void)
 	struct umd_info *info = &bpfilter_ops.info;
 	struct pid *tgid = info->tgid;
 
-	if (tgid) {
-		kill_pid(tgid, SIGKILL, 1);
-		wait_event(tgid->wait_pidfd, thread_group_exited(tgid));
-		bpfilter_umh_cleanup(info);
-	}
+	if (bpfilter_ops.stop)
+		return;
+
+	kill_pid(tgid, SIGKILL, 1);
 }
 
 static void __stop_umh(void)
@@ -37,10 +36,14 @@ static int bpfilter_send_req(struct mbox_request *req)
 	loff_t pos = 0;
 	ssize_t n;
 
+	req.is_set = is_set;
+	req.pid = current->pid;
+	req.cmd = optname;
+	req.addr = (long __force __user)optval;
+	req.len = optlen;
 	if (!bpfilter_ops.info.tgid)
-		return -EFAULT;
-	pos = 0;
-	n = kernel_write(bpfilter_ops.info.pipe_to_umh, req, sizeof(*req),
+		goto out;
+	n = __kernel_write(bpfilter_ops.info.pipe_to_umh, &req, sizeof(req),
 			   &pos);
 	if (n != sizeof(*req)) {
 		pr_err("write fail %zd\n", n);
@@ -86,6 +89,7 @@ static int start_umh(void)
 	err = fork_usermode_driver(&bpfilter_ops.info);
 	if (err)
 		return err;
+	bpfilter_ops.stop = false;
 	pr_info("Loaded bpfilter_umh pid %d\n", pid_nr(bpfilter_ops.info.tgid));
 
 	/* health check that usermode process started correctly */

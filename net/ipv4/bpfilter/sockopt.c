@@ -18,6 +18,7 @@ static void bpfilter_umh_cleanup(struct umd_info *info)
 	fput(info->pipe_from_umh);
 	put_pid(info->tgid);
 	info->tgid = NULL;
+	mutex_unlock(&bpfilter_ops.lock);
 }
 EXPORT_SYMBOL_GPL(bpfilter_umh_cleanup);
 
