@@ -86,14 +86,14 @@ int flow_dissector_bpf_prog_attach_check(struct net *net,
 		for_each_net(ns) {
 			if (ns == &init_net)
 				continue;
-			if (rcu_access_pointer(ns->bpf.progs[type]))
+			if (rcu_access_pointer(ns->bpf.run_array[type]))
 				return -EEXIST;
 		}
 	} else {
 		/* Make sure root flow dissector is not attached
 		 * when attaching to the non-root namespace.
 		 */
-		if (rcu_access_pointer(init_net.bpf.progs[type]))
+		if (rcu_access_pointer(init_net.bpf.run_array[type]))
 			return -EEXIST;
 	}
 
@@ -949,12 +949,7 @@ bool __skb_flow_dissect(const struct net *net,
 	WARN_ON_ONCE(!net);
 	if (net) {
 		enum netns_bpf_attach_type type = NETNS_BPF_FLOW_DISSECTOR;
-
-		rcu_read_lock();
-		attached = rcu_dereference(init_net.bpf.progs[type]);
-
-		if (!attached)
-			attached = rcu_dereference(net->bpf.progs[type]);
+		struct bpf_prog_array *run_array;
 
 		rcu_read_lock();
 		run_array = rcu_dereference(init_net.bpf.run_array[type]);
