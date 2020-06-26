@@ -12,7 +12,7 @@
 struct bpfilter_umh_ops bpfilter_ops;
 EXPORT_SYMBOL_GPL(bpfilter_ops);
 
-void bpfilter_umh_cleanup(struct umd_info *info)
+static void bpfilter_umh_cleanup(struct umd_info *info)
 {
 	fput(info->pipe_to_umh);
 	fput(info->pipe_from_umh);
