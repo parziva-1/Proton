@@ -4,101 +4,14 @@
  */
 #include <linux/shmem_fs.h>
 #include <linux/pipe_fs_i.h>
-#include <linux/mount.h>
-#include <linux/fs_struct.h>
-#include <linux/task_work.h>
 #include <linux/usermode_driver.h>
 
 static LIST_HEAD(umh_list);
 static DEFINE_MUTEX(umh_list_lock);
 
-static struct vfsmount *blob_to_mnt(const void *data, size_t len, const char *name)
-{
-	struct file_system_type *type;
-	struct vfsmount *mnt;
-	struct file *file;
-	ssize_t written;
-	loff_t pos = 0;
-
-	type = get_fs_type("tmpfs");
-	if (!type)
-		return ERR_PTR(-ENODEV);
-
-	mnt = kern_mount(type);
-	put_filesystem(type);
-	if (IS_ERR(mnt))
-		return mnt;
-
-	file = file_open_root(mnt->mnt_root, mnt, name, O_CREAT | O_WRONLY, 0700);
-	if (IS_ERR(file)) {
-		mntput(mnt);
-		return ERR_CAST(file);
-	}
-
-	written = kernel_write(file, data, len, &pos);
-	if (written != len) {
-		int err = written;
-		if (err >= 0)
-			err = -ENOMEM;
-		filp_close(file, NULL);
-		mntput(mnt);
-		return ERR_PTR(err);
-	}
-
-	fput(file);
-
-	/* Flush delayed fput so exec can open the file read-only */
-	flush_delayed_fput();
-	task_work_run();
-	return mnt;
-}
-
-/**
- * umd_load_blob - Remember a blob of bytes for fork_usermode_driver
- * @info: information about usermode driver
- * @data: a blob of bytes that can be executed as a file
- * @len:  The lentgh of the blob
- *
- */
-int umd_load_blob(struct umd_info *info, const void *data, size_t len)
-{
-	struct vfsmount *mnt;
-
-	if (WARN_ON_ONCE(info->wd.dentry || info->wd.mnt))
-		return -EBUSY;
-
-	mnt = blob_to_mnt(data, len, info->driver_name);
-	if (IS_ERR(mnt))
-		return PTR_ERR(mnt);
-
-	info->wd.mnt = mnt;
-	info->wd.dentry = mnt->mnt_root;
-	return 0;
-}
-EXPORT_SYMBOL_GPL(umd_load_blob);
-
-/**
- * umd_unload_blob - Disassociate @info from a previously loaded blob
- * @info: information about usermode driver
- *
- */
-int umd_unload_blob(struct umd_info *info)
-{
-	if (WARN_ON_ONCE(!info->wd.mnt ||
-			 !info->wd.dentry ||
-			 info->wd.mnt->mnt_root != info->wd.dentry))
-		return -EINVAL;
-
-	kern_unmount(info->wd.mnt);
-	info->wd.mnt = NULL;
-	info->wd.dentry = NULL;
-	return 0;
-}
-EXPORT_SYMBOL_GPL(umd_unload_blob);
-
 static int umd_setup(struct subprocess_info *info, struct cred *new)
 {
-	struct umd_info *umd_info = info->data;
+	struct umh_info *umh_info = info->data;
 	struct file *from_umh[2];
 	struct file *to_umh[2];
 	int err;
@@ -130,66 +43,73 @@ static int umd_setup(struct subprocess_info *info, struct cred *new)
 		return err;
 	}
 
-	set_fs_pwd(current->fs, &umd_info->wd);
-	umd_info->pipe_to_umh = to_umh[1];
-	umd_info->pipe_from_umh = from_umh[0];
-	umd_info->tgid = get_pid(task_tgid(current));
+	umh_info->pipe_to_umh = to_umh[1];
+	umh_info->pipe_from_umh = from_umh[0];
+	umh_info->pid = task_pid_nr(current);
 	current->flags |= PF_UMH;
 	return 0;
 }
 
 static void umd_cleanup(struct subprocess_info *info)
 {
-	struct umd_info *umd_info = info->data;
+	struct umh_info *umh_info = info->data;
 
 	/* cleanup if umh_setup() was successful but exec failed */
-	if (info->retval)
-		umd_cleanup_helper(umd_info);
+	if (info->retval) {
+		fput(umh_info->pipe_to_umh);
+		fput(umh_info->pipe_from_umh);
+	}
 }
 
 /**
- * umd_cleanup_helper - release the resources which were allocated in umd_setup
- * @info: information about usermode driver
- */
-void umd_cleanup_helper(struct umd_info *info)
-{
-	fput(info->pipe_to_umh);
-	fput(info->pipe_from_umh);
-	put_pid(info->tgid);
-	info->tgid = NULL;
-}
-EXPORT_SYMBOL_GPL(umd_cleanup_helper);
-
-/**
- * fork_usermode_driver - fork a usermode driver
- * @info: information about usermode driver (shouldn't be NULL)
+ * fork_usermode_blob - fork a blob of bytes as a usermode process
+ * @data: a blob of bytes that can be do_execv-ed as a file
+ * @len: length of the blob
+ * @info: information about usermode process (shouldn't be NULL)
  *
- * Returns either negative error or zero which indicates success in
- * executing a usermode driver. In such case 'struct umd_info *info'
- * is populated with two pipes and a tgid of the process. The caller is
- * responsible for health check of the user process, killing it via
- * tgid, and closing the pipes when user process is no longer needed.
+ * If info->cmdline is set it will be used as command line for the
+ * user process, else "usermodehelper" is used.
+ *
+ * Returns either negative error or zero which indicates success
+ * in executing a blob of bytes as a usermode process. In such
+ * case 'struct umh_info *info' is populated with two pipes
+ * and a pid of the process. The caller is responsible for health
+ * check of the user process, killing it via pid, and closing the
+ * pipes when user process is no longer needed.
  */
-int fork_usermode_driver(struct umd_info *info)
+int fork_usermode_blob(void *data, size_t len, struct umh_info *info)
 {
+	const char *cmdline = (info->cmdline) ? info->cmdline : "usermodehelper";
 	struct subprocess_info *sub_info;
 	char **argv = NULL;
+	struct file *file;
+	ssize_t written;
+	loff_t pos = 0;
 	int err;
 
-	if (WARN_ON_ONCE(info->tgid))
-		return -EBUSY;
+	file = shmem_kernel_file_setup("", len, 0);
+	if (IS_ERR(file))
+		return PTR_ERR(file);
+
+	written = kernel_write(file, data, len, &pos);
+	if (written != len) {
+		err = written;
+		if (err >= 0)
+			err = -ENOMEM;
+		goto out;
+	}
 
 	err = -ENOMEM;
-	argv = argv_split(GFP_KERNEL, info->driver_name, NULL);
+	argv = argv_split(GFP_KERNEL, cmdline, NULL);
 	if (!argv)
 		goto out;
 
-	sub_info = call_usermodehelper_setup(info->driver_name, argv, NULL,
-					     GFP_KERNEL,
+	sub_info = call_usermodehelper_setup("none", argv, NULL, GFP_KERNEL,
 					     umd_setup, umd_cleanup, info);
 	if (!sub_info)
 		goto out;
 
+	sub_info->file = file;
 	err = call_usermodehelper_exec(sub_info, UMH_WAIT_EXEC);
 	if (!err) {
 		mutex_lock(&umh_list_lock);
@@ -199,18 +119,19 @@ int fork_usermode_driver(struct umd_info *info)
 out:
 	if (argv)
 		argv_free(argv);
+	fput(file);
 	return err;
 }
-EXPORT_SYMBOL_GPL(fork_usermode_driver);
+EXPORT_SYMBOL_GPL(fork_usermode_blob);
 
 void __exit_umh(struct task_struct *tsk)
 {
-	struct umd_info *info;
-	struct pid *tgid = task_tgid(tsk);
+	struct umh_info *info;
+	pid_t pid = tsk->pid;
 
 	mutex_lock(&umh_list_lock);
 	list_for_each_entry(info, &umh_list, list) {
-		if (info->tgid == tgid) {
+		if (info->pid == pid) {
 			list_del(&info->list);
 			mutex_unlock(&umh_list_lock);
 			goto out;

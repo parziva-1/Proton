@@ -4,7 +4,6 @@
 
 #include <uapi/linux/bpfilter.h>
 #include <linux/usermode_driver.h>
-#include <linux/sockptr.h>
 
 struct sock;
 int bpfilter_ip_set_sockopt(struct sock *sk, int optname, sockptr_t optval,
