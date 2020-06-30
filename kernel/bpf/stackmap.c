@@ -370,9 +370,8 @@ static void stack_map_get_build_id_offset(struct bpf_stack_build_id *id_offs,
 }
 
 static struct perf_callchain_entry *
-get_callchain_entry_for_task(struct task_struct *task, u32 max_depth)
+get_callchain_entry_for_task(struct task_struct *task, u32 init_nr)
 {
-#ifdef CONFIG_STACKTRACE
 	struct perf_callchain_entry *entry;
 	int rctx;
 
@@ -381,8 +380,9 @@ get_callchain_entry_for_task(struct task_struct *task, u32 max_depth)
 	if (!entry)
 		return NULL;
 
-	entry->nr = stack_trace_save_tsk(task, (unsigned long *)entry->ip,
-					 max_depth, 0);
+	entry->nr = init_nr +
+		stack_trace_save_tsk(task, (unsigned long *)(entry->ip + init_nr),
+				     sysctl_perf_event_max_stack - init_nr, 0);
 
 	/* stack_trace_save_tsk() works on unsigned long array, while
 	 * perf_callchain_entry uses u64 array. For 32-bit systems, it is
@@ -394,20 +394,17 @@ get_callchain_entry_for_task(struct task_struct *task, u32 max_depth)
 		int i;
 
 		/* copy data from the end to avoid using extra buffer */
-		for (i = entry->nr - 1; i >= 0; i--)
+		for (i = entry->nr - 1; i >= (int)init_nr; i--)
 			to[i] = (u64)(from[i]);
 	}
 
 	put_callchain_entry(rctx);
 
 	return entry;
-#else /* CONFIG_STACKTRACE */
-	return NULL;
-#endif
 }
 
-static long __bpf_get_stackid(struct bpf_map *map,
-			      struct perf_callchain_entry *trace, u64 flags)
+BPF_CALL_3(bpf_get_stackid, struct pt_regs *, regs, struct bpf_map *, map,
+	   u64, flags)
 {
 	struct bpf_stack_map *smap = container_of(map, struct bpf_stack_map, map);
 	struct stack_map_bucket *bucket, *new_bucket, *old_bucket;
@@ -512,7 +509,8 @@ const struct bpf_func_proto bpf_get_stackid_proto = {
 	.arg3_type	= ARG_ANYTHING,
 };
 
-static __u64 count_kernel_ip(struct perf_callchain_entry *trace)
+static long __bpf_get_stack(struct pt_regs *regs, struct task_struct *task,
+			    void *buf, u32 size, u64 flags)
 {
 	__u64 nr_kernel = 0;
 
@@ -610,14 +608,6 @@ static long __bpf_get_stack(struct pt_regs *regs, struct task_struct *task,
 	if (task && user && !user_mode(regs))
 		goto err_fault;
 
-	/* get_perf_callchain does not support crosstask user stack walking
-	 * but returns an empty stack instead of NULL.
-	 */
-	if (crosstask && user) {
-		err = -EOPNOTSUPP;
-		goto clear;
-	}
-
 	num_elem = size / elem_size;
 	max_depth = num_elem + skip;
 	if (sysctl_perf_event_max_stack < max_depth)
@@ -628,8 +618,14 @@ static long __bpf_get_stack(struct pt_regs *regs, struct task_struct *task,
 	else if (kernel && task)
 		trace = get_callchain_entry_for_task(task, max_depth);
 	else
-		trace = get_perf_callchain(regs, 0, kernel, user, max_depth,
-					   crosstask, false);
+		init_nr = sysctl_perf_event_max_stack - num_elem;
+
+	if (kernel && task)
+		trace = get_callchain_entry_for_task(task, init_nr);
+	else
+		trace = get_perf_callchain(regs, init_nr, kernel, user,
+					   sysctl_perf_event_max_stack,
+					   false, false);
 	if (unlikely(!trace))
 		goto err_fault;
 
@@ -660,7 +656,7 @@ clear:
 BPF_CALL_4(bpf_get_stack, struct pt_regs *, regs, void *, buf, u32, size,
 	   u64, flags)
 {
-	return __bpf_get_stack(regs, NULL, NULL, buf, size, flags);
+	return __bpf_get_stack(regs, NULL, buf, size, flags);
 }
 
 const struct bpf_func_proto bpf_get_stack_proto = {
@@ -676,94 +672,21 @@ const struct bpf_func_proto bpf_get_stack_proto = {
 BPF_CALL_4(bpf_get_task_stack, struct task_struct *, task, void *, buf,
 	   u32, size, u64, flags)
 {
-	struct pt_regs *regs;
-	long res = -EINVAL;
+	struct pt_regs *regs = task_pt_regs(task);
 
-	if (!try_get_task_stack(task))
-		return -EFAULT;
-
-	regs = task_pt_regs(task);
-	if (regs)
-		res = __bpf_get_stack(regs, task, NULL, buf, size, flags);
-	put_task_stack(task);
-
-	return res;
+	return __bpf_get_stack(regs, task, buf, size, flags);
 }
 
-BTF_ID_LIST_SINGLE(bpf_get_task_stack_btf_ids, struct, task_struct)
-
+static int bpf_get_task_stack_btf_ids[5];
 const struct bpf_func_proto bpf_get_task_stack_proto = {
 	.func		= bpf_get_task_stack,
 	.gpl_only	= false,
 	.ret_type	= RET_INTEGER,
 	.arg1_type	= ARG_PTR_TO_BTF_ID,
-	.arg1_btf_id	= &bpf_get_task_stack_btf_ids[0],
 	.arg2_type	= ARG_PTR_TO_UNINIT_MEM,
 	.arg3_type	= ARG_CONST_SIZE_OR_ZERO,
 	.arg4_type	= ARG_ANYTHING,
-};
-
-BPF_CALL_4(bpf_get_stack_pe, struct bpf_perf_event_data_kern *, ctx,
-	   void *, buf, u32, size, u64, flags)
-{
-	struct pt_regs *regs = (struct pt_regs *)(ctx->regs);
-	struct perf_event *event = ctx->event;
-	struct perf_callchain_entry *trace;
-	bool kernel, user;
-	int err = -EINVAL;
-	__u64 nr_kernel;
-
-	if (!(event->attr.sample_type & __PERF_SAMPLE_CALLCHAIN_EARLY))
-		return __bpf_get_stack(regs, NULL, NULL, buf, size, flags);
-
-	if (unlikely(flags & ~(BPF_F_SKIP_FIELD_MASK | BPF_F_USER_STACK |
-			       BPF_F_USER_BUILD_ID)))
-		goto clear;
-
-	user = flags & BPF_F_USER_STACK;
-	kernel = !user;
-
-	err = -EFAULT;
-	trace = ctx->data->callchain;
-	if (unlikely(!trace))
-		goto clear;
-
-	nr_kernel = count_kernel_ip(trace);
-
-	if (kernel) {
-		__u64 nr = trace->nr;
-
-		trace->nr = nr_kernel;
-		err = __bpf_get_stack(regs, NULL, trace, buf, size, flags);
-
-		/* restore nr */
-		trace->nr = nr;
-	} else { /* user */
-		u64 skip = flags & BPF_F_SKIP_FIELD_MASK;
-
-		skip += nr_kernel;
-		if (skip > BPF_F_SKIP_FIELD_MASK)
-			goto clear;
-
-		flags = (flags & ~BPF_F_SKIP_FIELD_MASK) | skip;
-		err = __bpf_get_stack(regs, NULL, trace, buf, size, flags);
-	}
-	return err;
-
-clear:
-	memset(buf, 0, size);
-	return err;
-
-}
-
-const struct bpf_func_proto bpf_get_stack_proto_pe = {
-	.func		= bpf_get_stack_pe,
-	.gpl_only	= true,
-	.ret_type	= RET_INTEGER,
-	.arg1_type	= ARG_PTR_TO_CTX,
-	.arg2_type	= ARG_PTR_TO_UNINIT_MEM,
-	.arg3_type	= ARG_CONST_SIZE_OR_ZERO,
-	.arg4_type	= ARG_ANYTHING,
+	.btf_id		= bpf_get_task_stack_btf_ids,
 };
 
 /* Called from eBPF program */
