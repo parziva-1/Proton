@@ -2142,9 +2142,6 @@ struct net_device {
 	const struct udp_tunnel_nic_info	*udp_tunnel_nic_info;
 	struct udp_tunnel_nic	*udp_tunnel_nic;
 
-	/* protected by rtnl_lock */
-	struct bpf_xdp_entity	xdp_state[__MAX_XDP_MODE];
-
 	ANDROID_KABI_RESERVE(1);
 	ANDROID_KABI_RESERVE(2);
 	ANDROID_KABI_RESERVE(3);
