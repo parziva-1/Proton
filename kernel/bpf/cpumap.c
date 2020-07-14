@@ -63,6 +63,7 @@ struct bpf_cpu_map_entry {
 	struct task_struct *kthread;
 
 	struct bpf_cpumap_val value;
+	struct bpf_prog *prog;
 
 	atomic_t refcnt; /* Control when this struct can be free'ed */
 	struct rcu_head rcu;
@@ -230,7 +231,7 @@ static int cpu_map_bpf_prog_run_xdp(struct bpf_cpu_map_entry *rcpu,
 				    void **frames, int n,
 				    struct xdp_cpumap_stats *stats)
 {
-	struct xdp_rxq_info rxq = {};
+	struct xdp_rxq_info rxq;
 	struct xdp_buff xdp;
 	int i, nframes = 0;
 
@@ -267,7 +268,7 @@ static int cpu_map_bpf_prog_run_xdp(struct bpf_cpu_map_entry *rcpu,
 			break;
 		default:
 			bpf_warn_invalid_xdp_action(act);
-			fallthrough;
+			/* fallthrough */
 		case XDP_DROP:
 			xdp_return_frame(xdpf);
 			stats->drop++;
@@ -325,8 +326,8 @@ static int cpu_map_kthread_run(void *data)
 		 * kthread CPU pinned. Lockless access to ptr_ring
 		 * consume side valid as no-resize allowed of queue.
 		 */
-		n = __ptr_ring_consume_batched(rcpu->queue, frames, CPUMAP_BATCH);
-
+		n = __ptr_ring_consume_batched(rcpu->queue, frames,
+					       CPUMAP_BATCH);
 		for (i = 0; i < n; i++) {
 			void *f = frames[i];
 			struct page *page = virt_to_page(f);
@@ -377,8 +378,7 @@ static int cpu_map_kthread_run(void *data)
 	return 0;
 }
 
-static struct bpf_cpu_map_entry *
-__cpu_map_entry_alloc(struct bpf_cpumap_val *value, u32 cpu, int map_id)
+bool cpu_map_prog_allowed(struct bpf_map *map)
 {
 	return map->map_type == BPF_MAP_TYPE_CPUMAP &&
 	       map->value_size != offsetofend(struct bpf_cpumap_val, qsize);
@@ -450,6 +450,9 @@ __cpu_map_entry_alloc(struct bpf_cpumap_val *value, u32 cpu, int map_id)
 
 	get_cpu_map_entry(rcpu); /* 1-refcnt for being in cmap->cpu_map[] */
 	get_cpu_map_entry(rcpu); /* 1-refcnt for kthread */
+
+	if (fd > 0 && __cpu_map_load_bpf_program(rcpu, fd))
+		goto free_ptr_ring;
 
 	/* Make sure kthread runs on a single CPU */
 	kthread_bind(rcpu->kthread, cpu);
