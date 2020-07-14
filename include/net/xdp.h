@@ -131,17 +131,6 @@ void xdp_convert_frame_to_buff(struct xdp_frame *frame, struct xdp_buff *xdp)
 	xdp->frame_sz = frame->frame_sz;
 }
 
-/* Convert xdp_buff to xdp_frame */
-static inline
-struct xdp_frame *xdp_convert_buff_to_frame(struct xdp_buff *xdp)
-{
-	xdp->data_hard_start = frame->data - frame->headroom - sizeof(*frame);
-	xdp->data = frame->data;
-	xdp->data_end = frame->data + frame->len;
-	xdp->data_meta = frame->data - frame->metasize;
-	xdp->frame_sz = frame->frame_sz;
-}
-
 static inline
 int xdp_update_frame_from_buff(struct xdp_buff *xdp,
 			       struct xdp_frame *xdp_frame)
@@ -158,17 +147,31 @@ int xdp_update_frame_from_buff(struct xdp_buff *xdp,
 	/* Catch if driver didn't reserve tailroom for skb_shared_info */
 	if (unlikely(xdp->data_end > xdp_data_hard_end(xdp))) {
 		XDP_WARN("Driver BUG: missing reserved tailroom");
-		return NULL;
+		return -ENOSPC;
 	}
-
-	/* Store info in top of packet */
-	xdp_frame = xdp->data_hard_start;
 
 	xdp_frame->data = xdp->data;
 	xdp_frame->len  = xdp->data_end - xdp->data;
 	xdp_frame->headroom = headroom - sizeof(*xdp_frame);
 	xdp_frame->metasize = metasize;
 	xdp_frame->frame_sz = xdp->frame_sz;
+
+	return 0;
+}
+
+/* Convert xdp_buff to xdp_frame */
+static inline
+struct xdp_frame *xdp_convert_buff_to_frame(struct xdp_buff *xdp)
+{
+	struct xdp_frame *xdp_frame;
+
+	if (xdp->rxq->mem.type == MEM_TYPE_ZERO_COPY)
+		return xdp_convert_zc_to_xdp_frame(xdp);
+
+	/* Store info in top of packet */
+	xdp_frame = xdp->data_hard_start;
+	if (unlikely(xdp_update_frame_from_buff(xdp, xdp_frame) < 0))
+		return NULL;
 
 	/* rxq only valid until napi_schedule ends, convert to xdp_mem_info */
 	xdp_frame->mem = xdp->rxq->mem;
