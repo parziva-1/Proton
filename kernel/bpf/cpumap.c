@@ -63,7 +63,6 @@ struct bpf_cpu_map_entry {
 	struct task_struct *kthread;
 
 	struct bpf_cpumap_val value;
-	struct bpf_prog *prog;
 
 	atomic_t refcnt; /* Control when this struct can be free'ed */
 	struct rcu_head rcu;
@@ -378,7 +377,8 @@ static int cpu_map_kthread_run(void *data)
 	return 0;
 }
 
-bool cpu_map_prog_allowed(struct bpf_map *map)
+static struct bpf_cpu_map_entry *
+__cpu_map_entry_alloc(struct bpf_cpumap_val *value, u32 cpu, int map_id)
 {
 	return map->map_type == BPF_MAP_TYPE_CPUMAP &&
 	       map->value_size != offsetofend(struct bpf_cpumap_val, qsize);
@@ -441,9 +441,6 @@ __cpu_map_entry_alloc(struct bpf_cpumap_val *value, u32 cpu, int map_id)
 	rcpu->cpu    = cpu;
 	rcpu->map_id = map_id;
 	rcpu->value.qsize  = value->qsize;
-
-	if (fd > 0 && __cpu_map_load_bpf_program(rcpu, fd))
-		goto free_ptr_ring;
 
 	/* Setup kthread */
 	rcpu->kthread = kthread_create_on_node(cpu_map_kthread_run, rcpu, numa,
