@@ -113,12 +113,12 @@ static inline int compute_score(struct sock *sk, struct net *net,
 	return score;
 }
 
-struct sock *inet6_lookup_reuseport(struct net *net, struct sock *sk,
-				    struct sk_buff *skb, int doff,
-				    const struct in6_addr *saddr,
-				    __be16 sport,
-				    const struct in6_addr *daddr,
-				    unsigned short hnum)
+static inline struct sock *lookup_reuseport(struct net *net, struct sock *sk,
+					    struct sk_buff *skb, int doff,
+					    const struct in6_addr *saddr,
+					    __be16 sport,
+					    const struct in6_addr *daddr,
+					    unsigned short hnum)
 {
 	struct sock *reuse_sk = NULL;
 	u32 phash;
@@ -129,7 +129,6 @@ struct sock *inet6_lookup_reuseport(struct net *net, struct sock *sk,
 	}
 	return reuse_sk;
 }
-EXPORT_SYMBOL_GPL(inet6_lookup_reuseport);
 
 /* called with rcu_read_lock() */
 static struct sock *inet6_lhash2_lookup(struct net *net,
@@ -149,8 +148,8 @@ static struct sock *inet6_lhash2_lookup(struct net *net,
 		score = compute_score(sk, net, hnum, daddr, dif, sdif,
 				      exact_dif);
 		if (score > hiscore) {
-			result = inet6_lookup_reuseport(net, sk, skb, doff,
-							saddr, sport, daddr, hnum);
+			result = lookup_reuseport(net, sk, skb, doff,
+						  saddr, sport, daddr, hnum);
 			if (result)
 				return result;
 
