@@ -252,10 +252,10 @@ static inline int compute_score(struct sock *sk, struct net *net,
 	return score;
 }
 
-struct sock *inet_lookup_reuseport(struct net *net, struct sock *sk,
-				   struct sk_buff *skb, int doff,
-				   __be32 saddr, __be16 sport,
-				   __be32 daddr, unsigned short hnum)
+static inline struct sock *lookup_reuseport(struct net *net, struct sock *sk,
+					    struct sk_buff *skb, int doff,
+					    __be32 saddr, __be16 sport,
+					    __be32 daddr, unsigned short hnum)
 {
 	struct sock *reuse_sk = NULL;
 	u32 phash;
@@ -266,7 +266,6 @@ struct sock *inet_lookup_reuseport(struct net *net, struct sock *sk,
 	}
 	return reuse_sk;
 }
-EXPORT_SYMBOL_GPL(inet_lookup_reuseport);
 
 /*
  * Here are some nice properties to exploit here. The BSD API
@@ -293,8 +292,8 @@ static struct sock *inet_lhash2_lookup(struct net *net,
 		score = compute_score(sk, net, hnum, daddr,
 				      dif, sdif, exact_dif);
 		if (score > hiscore) {
-			result = inet_lookup_reuseport(net, sk, skb, doff,
-						       saddr, sport, daddr, hnum);
+			result = lookup_reuseport(net, sk, skb, doff,
+						  saddr, sport, daddr, hnum);
 			if (result)
 				return result;
 
