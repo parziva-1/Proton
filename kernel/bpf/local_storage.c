@@ -9,6 +9,10 @@
 #include <linux/slab.h>
 #include <uapi/linux/btf.h>
 
+#include "../cgroup/cgroup-internal.h"
+
+DEFINE_PER_CPU(struct bpf_cgroup_storage*, bpf_cgroup_storage[MAX_BPF_CGROUP_STORAGE_TYPE]);
+
 #ifdef CONFIG_CGROUP_BPF
 
 DEFINE_PER_CPU(struct bpf_cgroup_storage_info,
@@ -23,7 +27,6 @@ struct bpf_cgroup_storage_map {
 	struct bpf_map map;
 
 	spinlock_t lock;
-	struct bpf_prog_aux *aux;
 	struct rb_root root;
 	struct list_head list;
 };
@@ -474,33 +477,8 @@ int bpf_cgroup_storage_assign(struct bpf_prog_aux *aux, struct bpf_map *_map)
 	    aux->cgroup_storage[stype] != _map)
 		return -EBUSY;
 
-	if (map->aux && map->aux != aux)
-		goto unlock;
-	if (aux->cgroup_storage[stype] &&
-	    aux->cgroup_storage[stype] != _map)
-		goto unlock;
-
-	map->aux = aux;
 	aux->cgroup_storage[stype] = _map;
-	ret = 0;
-unlock:
-	spin_unlock_bh(&map->lock);
-
-	return ret;
-}
-
-void bpf_cgroup_storage_release(struct bpf_prog_aux *aux, struct bpf_map *_map)
-{
-	enum bpf_cgroup_storage_type stype = cgroup_storage_type(_map);
-	struct bpf_cgroup_storage_map *map = map_to_storage(_map);
-
-	spin_lock_bh(&map->lock);
-	if (map->aux == aux) {
-		WARN_ON(aux->cgroup_storage[stype] != _map);
-		map->aux = NULL;
-		aux->cgroup_storage[stype] = NULL;
-	}
-	spin_unlock_bh(&map->lock);
+	return 0;
 }
 
 static size_t bpf_cgroup_storage_calculate_size(struct bpf_map *map, u32 *pages)
