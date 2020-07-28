@@ -3637,7 +3637,7 @@ static int __check_buffer_access(struct bpf_verifier_env *env,
 {
 	if (off < 0) {
 		verbose(env,
-			"R%d invalid %s buffer access: off=%d, size=%d",
+			"R%d invalid %s buffer access: off=%d, size=%d\n",
 			regno, buf_info, off, size);
 		return -EACCES;
 	}
