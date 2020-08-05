@@ -255,13 +255,6 @@ enum bpf_link_type {
 	MAX_BPF_LINK_TYPE,
 };
 
-enum bpf_iter_link_info {
-	BPF_ITER_LINK_UNSPEC = 0,
-	BPF_ITER_LINK_MAP_FD = 1,
-
-	MAX_BPF_ITER_LINK_INFO,
-};
-
 /* cgroup-bpf attach flags used in BPF_PROG_ATTACH command
  *
  * NONE(default): No further bpf programs allowed in the subtree.
@@ -657,6 +650,8 @@ union bpf_attr {
 		};
 		__u32		attach_type;	/* attach type */
 		__u32		flags;		/* extra flags */
+		__aligned_u64	iter_info;	/* extra bpf_iter_link_info */
+		__u32		iter_info_len;	/* iter_info length */
 	} link_create;
 
 	struct { /* struct used by BPF_LINK_UPDATE command */
