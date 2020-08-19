@@ -296,7 +296,7 @@ cscope:
 	cscope -b -q -I $(srctree)/include -f cscope.out
 
 tags:
-	rm -f TAGS tags
+	$(RM) -f TAGS tags
 	ls *.c *.h | xargs $(TAGS_PROG) -a
 
 # Declare the contents of the .PHONY variable as phony.  We keep that
