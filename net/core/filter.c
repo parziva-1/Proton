@@ -5061,9 +5061,82 @@ static const struct bpf_func_proto bpf_sock_ops_setsockopt_proto = {
 	.arg5_type	= ARG_CONST_SIZE,
 };
 
+static int bpf_sock_ops_get_syn(struct bpf_sock_ops_kern *bpf_sock,
+				int optname, const u8 **start)
+{
+	struct sk_buff *syn_skb = bpf_sock->syn_skb;
+	const u8 *hdr_start;
+	int ret;
+
+	if (syn_skb) {
+		/* sk is a request_sock here */
+
+		if (optname == TCP_BPF_SYN) {
+			hdr_start = syn_skb->data;
+			ret = tcp_hdrlen(syn_skb);
+		} else {
+			/* optname == TCP_BPF_SYN_IP */
+			hdr_start = skb_network_header(syn_skb);
+			ret = skb_network_header_len(syn_skb) +
+				tcp_hdrlen(syn_skb);
+		}
+	} else {
+		struct sock *sk = bpf_sock->sk;
+		struct saved_syn *saved_syn;
+
+		if (sk->sk_state == TCP_NEW_SYN_RECV)
+			/* synack retransmit. bpf_sock->syn_skb will
+			 * not be available.  It has to resort to
+			 * saved_syn (if it is saved).
+			 */
+			saved_syn = inet_reqsk(sk)->saved_syn;
+		else
+			saved_syn = tcp_sk(sk)->saved_syn;
+
+		if (!saved_syn)
+			return -ENOENT;
+
+		if (optname == TCP_BPF_SYN) {
+			hdr_start = saved_syn->data +
+				saved_syn->network_hdrlen;
+			ret = saved_syn->tcp_hdrlen;
+		} else {
+			/* optname == TCP_BPF_SYN_IP */
+			hdr_start = saved_syn->data;
+			ret = saved_syn->network_hdrlen +
+				saved_syn->tcp_hdrlen;
+		}
+	}
+
+	*start = hdr_start;
+	return ret;
+}
+
 BPF_CALL_5(bpf_sock_ops_getsockopt, struct bpf_sock_ops_kern *, bpf_sock,
 	   int, level, int, optname, char *, optval, int, optlen)
 {
+	if (IS_ENABLED(CONFIG_INET) && level == SOL_TCP &&
+	    optname >= TCP_BPF_SYN && optname <= TCP_BPF_SYN_IP) {
+		int ret, copy_len = 0;
+		const u8 *start;
+
+		ret = bpf_sock_ops_get_syn(bpf_sock, optname, &start);
+		if (ret > 0) {
+			copy_len = ret;
+			if (optlen < copy_len) {
+				copy_len = optlen;
+				ret = -ENOSPC;
+			}
+
+			memcpy(optval, start, copy_len);
+		}
+
+		/* Zero out unused buffer at the end */
+		memset(optval + copy_len, 0, optlen - copy_len);
+
+		return ret;
+	}
+
 	return _bpf_getsockopt(bpf_sock->sk, level, optname, optval, optlen);
 }
 
@@ -6599,6 +6672,232 @@ static const struct bpf_func_proto bpf_sk_assign_proto = {
 	.ret_type	= RET_INTEGER,
 	.arg1_type      = ARG_PTR_TO_CTX,
 	.arg2_type      = ARG_PTR_TO_SOCK_COMMON,
+	.arg3_type	= ARG_ANYTHING,
+};
+
+static const u8 *bpf_search_tcp_opt(const u8 *op, const u8 *opend,
+				    u8 search_kind, const u8 *magic,
+				    u8 magic_len, bool *eol)
+{
+	u8 kind, kind_len;
+
+	*eol = false;
+
+	while (op < opend) {
+		kind = op[0];
+
+		if (kind == TCPOPT_EOL) {
+			*eol = true;
+			return ERR_PTR(-ENOMSG);
+		} else if (kind == TCPOPT_NOP) {
+			op++;
+			continue;
+		}
+
+		if (opend - op < 2 || opend - op < op[1] || op[1] < 2)
+			/* Something is wrong in the received header.
+			 * Follow the TCP stack's tcp_parse_options()
+			 * and just bail here.
+			 */
+			return ERR_PTR(-EFAULT);
+
+		kind_len = op[1];
+		if (search_kind == kind) {
+			if (!magic_len)
+				return op;
+
+			if (magic_len > kind_len - 2)
+				return ERR_PTR(-ENOMSG);
+
+			if (!memcmp(&op[2], magic, magic_len))
+				return op;
+		}
+
+		op += kind_len;
+	}
+
+	return ERR_PTR(-ENOMSG);
+}
+
+BPF_CALL_4(bpf_sock_ops_load_hdr_opt, struct bpf_sock_ops_kern *, bpf_sock,
+	   void *, search_res, u32, len, u64, flags)
+{
+	bool eol, load_syn = flags & BPF_LOAD_HDR_OPT_TCP_SYN;
+	const u8 *op, *opend, *magic, *search = search_res;
+	u8 search_kind, search_len, copy_len, magic_len;
+	int ret;
+
+	/* 2 byte is the minimal option len except TCPOPT_NOP and
+	 * TCPOPT_EOL which are useless for the bpf prog to learn
+	 * and this helper disallow loading them also.
+	 */
+	if (len < 2 || flags & ~BPF_LOAD_HDR_OPT_TCP_SYN)
+		return -EINVAL;
+
+	search_kind = search[0];
+	search_len = search[1];
+
+	if (search_len > len || search_kind == TCPOPT_NOP ||
+	    search_kind == TCPOPT_EOL)
+		return -EINVAL;
+
+	if (search_kind == TCPOPT_EXP || search_kind == 253) {
+		/* 16 or 32 bit magic.  +2 for kind and kind length */
+		if (search_len != 4 && search_len != 6)
+			return -EINVAL;
+		magic = &search[2];
+		magic_len = search_len - 2;
+	} else {
+		if (search_len)
+			return -EINVAL;
+		magic = NULL;
+		magic_len = 0;
+	}
+
+	if (load_syn) {
+		ret = bpf_sock_ops_get_syn(bpf_sock, TCP_BPF_SYN, &op);
+		if (ret < 0)
+			return ret;
+
+		opend = op + ret;
+		op += sizeof(struct tcphdr);
+	} else {
+		if (!bpf_sock->skb ||
+		    bpf_sock->op == BPF_SOCK_OPS_HDR_OPT_LEN_CB)
+			/* This bpf_sock->op cannot call this helper */
+			return -EPERM;
+
+		opend = bpf_sock->skb_data_end;
+		op = bpf_sock->skb->data + sizeof(struct tcphdr);
+	}
+
+	op = bpf_search_tcp_opt(op, opend, search_kind, magic, magic_len,
+				&eol);
+	if (IS_ERR(op))
+		return PTR_ERR(op);
+
+	copy_len = op[1];
+	ret = copy_len;
+	if (copy_len > len) {
+		ret = -ENOSPC;
+		copy_len = len;
+	}
+
+	memcpy(search_res, op, copy_len);
+	return ret;
+}
+
+static const struct bpf_func_proto bpf_sock_ops_load_hdr_opt_proto = {
+	.func		= bpf_sock_ops_load_hdr_opt,
+	.gpl_only	= false,
+	.ret_type	= RET_INTEGER,
+	.arg1_type	= ARG_PTR_TO_CTX,
+	.arg2_type	= ARG_PTR_TO_MEM,
+	.arg3_type	= ARG_CONST_SIZE,
+	.arg4_type	= ARG_ANYTHING,
+};
+
+BPF_CALL_4(bpf_sock_ops_store_hdr_opt, struct bpf_sock_ops_kern *, bpf_sock,
+	   const void *, from, u32, len, u64, flags)
+{
+	u8 new_kind, new_kind_len, magic_len = 0, *opend;
+	const u8 *op, *new_op, *magic = NULL;
+	struct sk_buff *skb;
+	bool eol;
+
+	if (bpf_sock->op != BPF_SOCK_OPS_WRITE_HDR_OPT_CB)
+		return -EPERM;
+
+	if (len < 2 || flags)
+		return -EINVAL;
+
+	new_op = from;
+	new_kind = new_op[0];
+	new_kind_len = new_op[1];
+
+	if (new_kind_len > len || new_kind == TCPOPT_NOP ||
+	    new_kind == TCPOPT_EOL)
+		return -EINVAL;
+
+	if (new_kind_len > bpf_sock->remaining_opt_len)
+		return -ENOSPC;
+
+	/* 253 is another experimental kind */
+	if (new_kind == TCPOPT_EXP || new_kind == 253)  {
+		if (new_kind_len < 4)
+			return -EINVAL;
+		/* Match for the 2 byte magic also.
+		 * RFC 6994: the magic could be 2 or 4 bytes.
+		 * Hence, matching by 2 byte only is on the
+		 * conservative side but it is the right
+		 * thing to do for the 'search-for-duplication'
+		 * purpose.
+		 */
+		magic = &new_op[2];
+		magic_len = 2;
+	}
+
+	/* Check for duplication */
+	skb = bpf_sock->skb;
+	op = skb->data + sizeof(struct tcphdr);
+	opend = bpf_sock->skb_data_end;
+
+	op = bpf_search_tcp_opt(op, opend, new_kind, magic, magic_len,
+				&eol);
+	if (!IS_ERR(op))
+		return -EEXIST;
+
+	if (PTR_ERR(op) != -ENOMSG)
+		return PTR_ERR(op);
+
+	if (eol)
+		/* The option has been ended.  Treat it as no more
+		 * header option can be written.
+		 */
+		return -ENOSPC;
+
+	/* No duplication found.  Store the header option. */
+	memcpy(opend, from, new_kind_len);
+
+	bpf_sock->remaining_opt_len -= new_kind_len;
+	bpf_sock->skb_data_end += new_kind_len;
+
+	return 0;
+}
+
+static const struct bpf_func_proto bpf_sock_ops_store_hdr_opt_proto = {
+	.func		= bpf_sock_ops_store_hdr_opt,
+	.gpl_only	= false,
+	.ret_type	= RET_INTEGER,
+	.arg1_type	= ARG_PTR_TO_CTX,
+	.arg2_type	= ARG_PTR_TO_MEM,
+	.arg3_type	= ARG_CONST_SIZE,
+	.arg4_type	= ARG_ANYTHING,
+};
+
+BPF_CALL_3(bpf_sock_ops_reserve_hdr_opt, struct bpf_sock_ops_kern *, bpf_sock,
+	   u32, len, u64, flags)
+{
+	if (bpf_sock->op != BPF_SOCK_OPS_HDR_OPT_LEN_CB)
+		return -EPERM;
+
+	if (flags || len < 2)
+		return -EINVAL;
+
+	if (len > bpf_sock->remaining_opt_len)
+		return -ENOSPC;
+
+	bpf_sock->remaining_opt_len -= len;
+
+	return 0;
+}
+
+static const struct bpf_func_proto bpf_sock_ops_reserve_hdr_opt_proto = {
+	.func		= bpf_sock_ops_reserve_hdr_opt,
+	.gpl_only	= false,
+	.ret_type	= RET_INTEGER,
+	.arg1_type	= ARG_PTR_TO_CTX,
+	.arg2_type	= ARG_ANYTHING,
 	.arg3_type	= ARG_ANYTHING,
 };
 
