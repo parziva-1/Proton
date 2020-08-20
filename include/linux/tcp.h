@@ -568,7 +568,8 @@ static inline void tcp_saved_syn_free(struct tcp_sock *tp)
 
 static inline u32 tcp_saved_syn_len(const struct saved_syn *saved_syn)
 {
-	return saved_syn->network_hdrlen + saved_syn->tcp_hdrlen;
+	return saved_syn->mac_hdrlen + saved_syn->network_hdrlen +
+		saved_syn->tcp_hdrlen;
 }
 
 struct sk_buff *tcp_get_timestamping_opt_stats(const struct sock *sk);
