@@ -109,7 +109,7 @@ static void *bpf_fd_inode_storage_lookup_elem(struct bpf_map *map, void *key)
 	fd = *(int *)key;
 	f = fget_raw(fd);
 	if (!f)
-		return ERR_PTR(-EBADF);
+		return NULL;
 
 	sdata = inode_storage_lookup(f->f_inode, map, true);
 	fput(f);
@@ -125,12 +125,8 @@ static int bpf_fd_inode_storage_update_elem(struct bpf_map *map, void *key,
 
 	fd = *(int *)key;
 	f = fget_raw(fd);
-	if (!f)
+	if (!f || !inode_storage_ptr(f->f_inode))
 		return -EBADF;
-	if (!inode_storage_ptr(f->f_inode)) {
-		fput(f);
-		return -EBADF;
-	}
 
 	sdata = bpf_local_storage_update(f->f_inode,
 					 (struct bpf_local_storage_map *)map,
@@ -180,7 +176,7 @@ BPF_CALL_4(bpf_inode_storage_get, struct bpf_map *, map, struct inode *, inode,
 	 * bpf_local_storage_update expects the owner to have a
 	 * valid storage pointer.
 	 */
-	if (!inode || !inode_storage_ptr(inode))
+	if (!inode_storage_ptr(inode))
 		return (unsigned long)NULL;
 
 	sdata = inode_storage_lookup(inode, map, true);
@@ -204,9 +200,6 @@ BPF_CALL_4(bpf_inode_storage_get, struct bpf_map *, map, struct inode *, inode,
 BPF_CALL_2(bpf_inode_storage_delete,
 	   struct bpf_map *, map, struct inode *, inode)
 {
-	if (!inode)
-		return -EINVAL;
-
 	/* This helper must only called from where the inode is gurranteed
 	 * to have a refcount and cannot be freed.
 	 */
@@ -242,7 +235,6 @@ static void inode_storage_map_free(struct bpf_map *map)
 
 static int inode_storage_map_btf_id;
 const struct bpf_map_ops inode_storage_map_ops = {
-	.map_meta_equal = bpf_map_meta_equal,
 	.map_alloc_check = bpf_local_storage_map_alloc_check,
 	.map_alloc = inode_storage_map_alloc,
 	.map_free = inode_storage_map_free,
@@ -256,7 +248,9 @@ const struct bpf_map_ops inode_storage_map_ops = {
 	.map_owner_storage_ptr = inode_storage_ptr,
 };
 
-BTF_ID_LIST_SINGLE(bpf_inode_storage_btf_ids, struct, inode)
+BTF_ID_LIST(bpf_inode_storage_btf_ids)
+BTF_ID_UNUSED
+BTF_ID(struct, inode)
 
 const struct bpf_func_proto bpf_inode_storage_get_proto = {
 	.func		= bpf_inode_storage_get,
@@ -264,9 +258,9 @@ const struct bpf_func_proto bpf_inode_storage_get_proto = {
 	.ret_type	= RET_PTR_TO_MAP_VALUE_OR_NULL,
 	.arg1_type	= ARG_CONST_MAP_PTR,
 	.arg2_type	= ARG_PTR_TO_BTF_ID,
-	.arg2_btf_id	= &bpf_inode_storage_btf_ids[0],
 	.arg3_type	= ARG_PTR_TO_MAP_VALUE_OR_NULL,
 	.arg4_type	= ARG_ANYTHING,
+	.btf_id		= bpf_inode_storage_btf_ids,
 };
 
 const struct bpf_func_proto bpf_inode_storage_delete_proto = {
@@ -275,5 +269,5 @@ const struct bpf_func_proto bpf_inode_storage_delete_proto = {
 	.ret_type	= RET_INTEGER,
 	.arg1_type	= ARG_CONST_MAP_PTR,
 	.arg2_type	= ARG_PTR_TO_BTF_ID,
-	.arg2_btf_id	= &bpf_inode_storage_btf_ids[0],
+	.btf_id		= bpf_inode_storage_btf_ids,
 };
