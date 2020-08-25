@@ -38,7 +38,7 @@ static int trigger_fstat_events(pid_t pid)
 		return ret;
 	/* unmountable pseudo-filesystems */
 	sockfd = socket(AF_INET, SOCK_STREAM, 0);
-	if (CHECK(sockfd < 0, "trigger", "socket failed\n"))
+	if (CHECK(sockfd < 0, "trigger", "scoket failed\n"))
 		goto out_close;
 	/* mountable pseudo-filesystems */
 	procfd = open("/proc/self/comm", O_RDONLY);
@@ -47,7 +47,7 @@ static int trigger_fstat_events(pid_t pid)
 	devfd = open("/dev/urandom", O_RDONLY);
 	if (CHECK(devfd < 0, "trigger", "open /dev/urandom failed\n"))
 		goto out_close;
-	localfd = open("/tmp/d_path_loadgen.txt", O_CREAT | O_RDONLY, 0644);
+	localfd = open("/tmp/d_path_loadgen.txt", O_CREAT | O_RDONLY);
 	if (CHECK(localfd < 0, "trigger", "open /tmp/d_path_loadgen.txt failed\n"))
 		goto out_close;
 	/* bpf_d_path will return path with (deleted) */
@@ -118,16 +118,6 @@ void test_d_path(void)
 
 	err = trigger_fstat_events(bss->my_pid);
 	if (err < 0)
-		goto cleanup;
-
-	if (CHECK(!bss->called_stat,
-		  "stat",
-		  "trampoline for security_inode_getattr was not called\n"))
-		goto cleanup;
-
-	if (CHECK(!bss->called_close,
-		  "close",
-		  "trampoline for filp_close was not called\n"))
 		goto cleanup;
 
 	for (int i = 0; i < MAX_FILES; i++) {
