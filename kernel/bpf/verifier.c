@@ -3151,7 +3151,8 @@ static int check_map_access(struct bpf_verifier_env *env, u32 regno,
 
 static enum bpf_prog_type resolve_prog_type(struct bpf_prog *prog)
 {
-	return prog->aux->dst_prog ? prog->aux->dst_prog->type : prog->type;
+	return prog->aux->linked_prog ? prog->aux->linked_prog->type
+				      : prog->type;
 }
 
 static bool may_access_direct_pkt_data(struct bpf_verifier_env *env,
@@ -4801,7 +4802,7 @@ static bool allow_tail_call_in_subprogs(struct bpf_verifier_env *env)
 static bool may_update_sockmap(struct bpf_verifier_env *env, int func_id)
 {
 	enum bpf_attach_type eatype = env->prog->expected_attach_type;
-	enum bpf_prog_type type = env->prog->type;
+	enum bpf_prog_type type = resolve_prog_type(env->prog);
 
 	if (func_id != BPF_FUNC_map_update_elem)
 		return false;
@@ -8310,32 +8311,11 @@ static int check_return_code(struct bpf_verifier_env *env)
 	const struct bpf_prog *prog = env->prog;
 	struct bpf_reg_state *reg;
 	struct tnum range = tnum_range(0, 1);
+	enum bpf_prog_type prog_type = resolve_prog_type(env->prog);
 	int err;
 
 	/* LSM and struct_ops func-ptr's return type could be "void" */
-	if ((env->prog->type == BPF_PROG_TYPE_STRUCT_OPS ||
-	     env->prog->type == BPF_PROG_TYPE_LSM) &&
-	    !prog->aux->attach_func_proto->type)
-		return 0;
-
-	/* eBPF calling convetion is such that R0 is used
-	 * to return the value from eBPF program.
-	 * Make sure that it's readable at this time
-	 * of bpf_exit, which means that program wrote
-	 * something into it earlier
-	 */
-	err = check_reg_arg(env, BPF_REG_0, SRC_OP);
-	if (err)
-		return err;
-
-	if (is_pointer_value(env, BPF_REG_0)) {
-		verbose(env, "R0 leaks addr as return value\n");
-		return -EACCES;
-	}
-
-	/* LSM and struct_ops func-ptr's return type could be "void" */
-	if (!is_subprog &&
-	    (prog_type == BPF_PROG_TYPE_STRUCT_OPS ||
+	if ((prog_type == BPF_PROG_TYPE_STRUCT_OPS ||
 	     prog_type == BPF_PROG_TYPE_LSM) &&
 	    !prog->aux->attach_func_proto->type)
 		return 0;
@@ -8353,16 +8333,6 @@ static int check_return_code(struct bpf_verifier_env *env)
 	if (is_pointer_value(env, BPF_REG_0)) {
 		verbose(env, "R0 leaks addr as return value\n");
 		return -EACCES;
-	}
-
-	reg = cur_regs(env) + BPF_REG_0;
-	if (is_subprog) {
-		if (reg->type != SCALAR_VALUE) {
-			verbose(env, "At subprogram exit the register R0 is not a scalar value (%s)\n",
-				reg_type_str[reg->type]);
-			return -EINVAL;
-		}
-		return 0;
 	}
 
 	switch (prog_type) {
@@ -10161,6 +10131,7 @@ static int check_map_prog_compatibility(struct bpf_verifier_env *env,
 					struct bpf_prog *prog)
 
 {
+	enum bpf_prog_type prog_type = resolve_prog_type(prog);
 	/*
 	 * Validate that trace type programs use preallocated hash maps.
 	 *
@@ -10178,8 +10149,8 @@ static int check_map_prog_compatibility(struct bpf_verifier_env *env,
 	 * now, but warnings are emitted so developers are made aware of
 	 * the unsafety and can fix their programs before this is enforced.
 	 */
-	if (is_tracing_prog_type(prog->type) && !is_preallocated_map(map)) {
-		if (prog->type == BPF_PROG_TYPE_PERF_EVENT) {
+	if (is_tracing_prog_type(prog_type) && !is_preallocated_map(map)) {
+		if (prog_type == BPF_PROG_TYPE_PERF_EVENT) {
 			verbose(env, "perf_event programs can only use preallocated hash map\n");
 			return -EINVAL;
 		}
@@ -10940,7 +10911,7 @@ static int convert_ctx_accesses(struct bpf_verifier_env *env)
 				insn->code = BPF_LDX | BPF_PROBE_MEM |
 					BPF_SIZE((insn)->code);
 				env->prog->aux->num_exentries++;
-			} else if (env->prog->type != BPF_PROG_TYPE_STRUCT_OPS) {
+			} else if (resolve_prog_type(env->prog) != BPF_PROG_TYPE_STRUCT_OPS) {
 				verbose(env, "Writes through BTF pointers are not allowed\n");
 				return -EINVAL;
 			}
