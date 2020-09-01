@@ -344,7 +344,7 @@ bool dev_map_can_have_prog(struct bpf_map *map)
 	return false;
 }
 
-static int bq_xmit_all(struct xdp_dev_bulk_queue *bq, u32 flags)
+static void bq_xmit_all(struct xdp_dev_bulk_queue *bq, u32 flags)
 {
 	struct net_device *dev = bq->dev;
 	int sent = 0, drops = 0, err = 0;
@@ -424,8 +424,8 @@ struct bpf_dtab_netdev *__dev_map_lookup_elem(struct bpf_map *map, u32 key)
 /* Runs under RCU-read-side, plus in softirq under NAPI protection.
  * Thus, safe percpu variable access.
  */
-static int bq_enqueue(struct net_device *dev, struct xdp_frame *xdpf,
-		      struct net_device *dev_rx)
+static void bq_enqueue(struct net_device *dev, struct xdp_frame *xdpf,
+		       struct net_device *dev_rx)
 {
 	struct list_head *flush_list = this_cpu_ptr(&dev_flush_list);
 	struct xdp_dev_bulk_queue *bq = this_cpu_ptr(dev->xdp_bulkq);
@@ -463,7 +463,8 @@ static inline int __xdp_enqueue(struct net_device *dev, struct xdp_buff *xdp,
 	if (unlikely(!xdpf))
 		return -EOVERFLOW;
 
-	return bq_enqueue(dev, xdpf, dev_rx);
+	bq_enqueue(dev, xdpf, dev_rx);
+	return 0;
 }
 
 static struct xdp_buff *dev_map_run_prog(struct net_device *dev,
