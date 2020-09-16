@@ -397,9 +397,6 @@ struct bpf_subprog_info {
 	u16 stack_depth; /* max. stack depth used by this function */
 	bool has_tail_call;
 	bool tail_call_reachable;
-	bool has_ld_abs;
-
-	ANDROID_KABI_RESERVE(1);
 };
 
 /* single container for all structs

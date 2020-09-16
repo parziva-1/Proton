@@ -3577,8 +3577,6 @@ continue_func:
 	if (tail_call_reachable)
 		for (j = 0; j < frame; j++)
 			subprog[ret_prog[j]].tail_call_reachable = true;
-	if (subprog[0].tail_call_reachable)
-		env->prog->aux->tail_call_reachable = true;
 
 	/* end of for() loop means the last insn of the 'subprog'
 	 * was reached. Doesn't matter whether it was JA or EXIT
@@ -11205,6 +11203,7 @@ static int jit_subprogs(struct bpf_verifier_env *env)
 				num_exentries++;
 		}
 		func[i]->aux->num_exentries = num_exentries;
+		func[i]->aux->tail_call_reachable = env->subprog_info[i].tail_call_reachable;
 		func[i] = bpf_int_jit_compile(func[i]);
 		if (!func[i]->jited) {
 			err = -ENOTSUPP;
