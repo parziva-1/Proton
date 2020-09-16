@@ -10509,7 +10509,7 @@ static void adjust_subprog_starts(struct bpf_verifier_env *env, u32 off, u32 len
 	}
 }
 
-static void adjust_poke_descs(struct bpf_prog *prog, u32 off, u32 len)
+static void adjust_poke_descs(struct bpf_prog *prog, u32 len)
 {
 	struct bpf_jit_poke_descriptor *tab = prog->aux->poke_tab;
 	int i, sz = prog->aux->size_poke_tab;
@@ -10517,8 +10517,6 @@ static void adjust_poke_descs(struct bpf_prog *prog, u32 off, u32 len)
 
 	for (i = 0; i < sz; i++) {
 		desc = &tab[i];
-		if (desc->insn_idx <= off)
-			continue;
 		desc->insn_idx += len - 1;
 	}
 }
@@ -10547,7 +10545,7 @@ static struct bpf_prog *bpf_patch_insn_data(struct bpf_verifier_env *env, u32 of
 	}
 	adjust_insn_aux_data(env, new_data, new_prog, off, len);
 	adjust_subprog_starts(env, off, len);
-	adjust_poke_descs(new_prog, off, len);
+	adjust_poke_descs(new_prog, len);
 	return new_prog;
 }
 
@@ -11164,6 +11162,34 @@ static int jit_subprogs(struct bpf_verifier_env *env)
 				poke->aux = func[i]->aux;
 		}
 
+		for (j = 0; j < prog->aux->size_poke_tab; j++) {
+			u32 insn_idx = prog->aux->poke_tab[j].insn_idx;
+			int ret;
+
+			if (!(insn_idx >= subprog_start &&
+			      insn_idx <= subprog_end))
+				continue;
+
+			ret = bpf_jit_add_poke_descriptor(func[i],
+							  &prog->aux->poke_tab[j]);
+			if (ret < 0) {
+				verbose(env, "adding tail call poke descriptor failed\n");
+				goto out_free;
+			}
+
+			func[i]->insnsi[insn_idx - subprog_start].imm = ret + 1;
+
+			map_ptr = func[i]->aux->poke_tab[ret].tail_call.map;
+			ret = map_ptr->ops->map_poke_track(map_ptr, func[i]->aux);
+			if (ret < 0) {
+				verbose(env, "tracking tail call prog failed\n");
+				goto out_free;
+			}
+		}
+
+		/* Use bpf_prog_F_tag to indicate functions in stack traces.
+		 * Long term would need debug info to populate names
+		 */
 		func[i]->aux->name[0] = 'F';
 		func[i]->aux->stack_depth = env->subprog_info[i].stack_depth;
 		func[i]->jit_requested = 1;
@@ -11185,6 +11211,18 @@ static int jit_subprogs(struct bpf_verifier_env *env)
 			goto out_free;
 		}
 		cond_resched();
+	}
+
+	/* Untrack main program's aux structs so that during map_poke_run()
+	 * we will not stumble upon the unfilled poke descriptors; each
+	 * of the main program's poke descs got distributed across subprogs
+	 * and got tracked onto map, so we are sure that none of them will
+	 * be missed after the operation below
+	 */
+	for (i = 0; i < prog->aux->size_poke_tab; i++) {
+		map_ptr = prog->aux->poke_tab[i].tail_call.map;
+
+		map_ptr->ops->map_poke_untrack(map_ptr, prog->aux);
 	}
 
 	/* at this point all bpf functions were successfully JITed
@@ -11255,22 +11293,14 @@ static int jit_subprogs(struct bpf_verifier_env *env)
 	bpf_prog_free_unused_jited_linfo(prog);
 	return 0;
 out_free:
-	/* We failed JIT'ing, so at this point we need to unregister poke
-	 * descriptors from subprogs, so that kernel is not attempting to
-	 * patch it anymore as we're freeing the subprog JIT memory.
-	 */
-	for (i = 0; i < prog->aux->size_poke_tab; i++) {
-		map_ptr = prog->aux->poke_tab[i].tail_call.map;
-		map_ptr->ops->map_poke_untrack(map_ptr, prog->aux);
-	}
-	/* At this point we're guaranteed that poke descriptors are not
-	 * live anymore. We can just unlink its descriptor table as it's
-	 * released with the main prog.
-	 */
 	for (i = 0; i < env->subprog_cnt; i++) {
 		if (!func[i])
 			continue;
-		func[i]->aux->poke_tab = NULL;
+
+		for (j = 0; j < func[i]->aux->size_poke_tab; j++) {
+			map_ptr = func[i]->aux->poke_tab[j].tail_call.map;
+			map_ptr->ops->map_poke_untrack(map_ptr, func[i]->aux);
+		}
 		bpf_jit_free(func[i]);
 	}
 	kfree(func);
@@ -11499,6 +11529,7 @@ static int fixup_bpf_calls(struct bpf_verifier_env *env)
 					.reason = BPF_POKE_REASON_TAIL_CALL,
 					.tail_call.map = BPF_MAP_PTR(aux->map_ptr_state),
 					.tail_call.key = bpf_map_key_immediate(aux),
+					.insn_idx = i + delta,
 				};
 
 				ret = bpf_jit_add_poke_descriptor(prog, &desc);
