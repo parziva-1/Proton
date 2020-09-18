@@ -8754,11 +8754,11 @@ static int check_btf_func(struct bpf_verifier_env *env,
 	u32 krec_size = sizeof(struct bpf_func_info);
 	struct bpf_func_info *krecord;
 	struct bpf_func_info_aux *info_aux = NULL;
-	const struct btf_type *type;
 	struct bpf_prog *prog;
 	const struct btf *btf;
 	void __user *urecord;
 	u32 prev_offset = 0;
+	bool scalar_return;
 	int ret = -ENOMEM;
 
 	nfuncs = attr->func_info_cnt;
@@ -8858,7 +8858,7 @@ static int check_btf_func(struct bpf_verifier_env *env,
 			verbose(env, "tail_call is only allowed in functions that return 'int'.\n");
 			goto err_free;
 		}
-		info_aux[i].linkage = BTF_INFO_VLEN(type->info);
+
 		prev_offset = krecord[i].insn_off;
 		urecord += urec_size;
 	}
