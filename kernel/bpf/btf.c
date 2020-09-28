@@ -279,6 +279,91 @@ static const char *btf_type_str(const struct btf_type *t)
 	return btf_kind_str[BTF_INFO_KIND(t->info)];
 }
 
+/* Chunk size we use in safe copy of data to be shown. */
+#define BTF_SHOW_OBJ_SAFE_SIZE		32
+
+/*
+ * This is the maximum size of a base type value (equivalent to a
+ * 128-bit int); if we are at the end of our safe buffer and have
+ * less than 16 bytes space we can't be assured of being able
+ * to copy the next type safely, so in such cases we will initiate
+ * a new copy.
+ */
+#define BTF_SHOW_OBJ_BASE_TYPE_SIZE	16
+
+/* Type name size */
+#define BTF_SHOW_NAME_SIZE		80
+
+/*
+ * Common data to all BTF show operations. Private show functions can add
+ * their own data to a structure containing a struct btf_show and consult it
+ * in the show callback.  See btf_type_show() below.
+ *
+ * One challenge with showing nested data is we want to skip 0-valued
+ * data, but in order to figure out whether a nested object is all zeros
+ * we need to walk through it.  As a result, we need to make two passes
+ * when handling structs, unions and arrays; the first path simply looks
+ * for nonzero data, while the second actually does the display.  The first
+ * pass is signalled by show->state.depth_check being set, and if we
+ * encounter a non-zero value we set show->state.depth_to_show to
+ * the depth at which we encountered it.  When we have completed the
+ * first pass, we will know if anything needs to be displayed if
+ * depth_to_show > depth.  See btf_[struct,array]_show() for the
+ * implementation of this.
+ *
+ * Another problem is we want to ensure the data for display is safe to
+ * access.  To support this, the anonymous "struct {} obj" tracks the data
+ * object and our safe copy of it.  We copy portions of the data needed
+ * to the object "copy" buffer, but because its size is limited to
+ * BTF_SHOW_OBJ_COPY_LEN bytes, multiple copies may be required as we
+ * traverse larger objects for display.
+ *
+ * The various data type show functions all start with a call to
+ * btf_show_start_type() which returns a pointer to the safe copy
+ * of the data needed (or if BTF_SHOW_UNSAFE is specified, to the
+ * raw data itself).  btf_show_obj_safe() is responsible for
+ * using copy_from_kernel_nofault() to update the safe data if necessary
+ * as we traverse the object's data.  skbuff-like semantics are
+ * used:
+ *
+ * - obj.head points to the start of the toplevel object for display
+ * - obj.size is the size of the toplevel object
+ * - obj.data points to the current point in the original data at
+ *   which our safe data starts.  obj.data will advance as we copy
+ *   portions of the data.
+ *
+ * In most cases a single copy will suffice, but larger data structures
+ * such as "struct task_struct" will require many copies.  The logic in
+ * btf_show_obj_safe() handles the logic that determines if a new
+ * copy_from_kernel_nofault() is needed.
+ */
+struct btf_show {
+	u64 flags;
+	void *target;	/* target of show operation (seq file, buffer) */
+	void (*showfn)(struct btf_show *show, const char *fmt, va_list args);
+	const struct btf *btf;
+	/* below are used during iteration */
+	struct {
+		u8 depth;
+		u8 depth_to_show;
+		u8 depth_check;
+		u8 array_member:1,
+		   array_terminated:1;
+		u16 array_encoding;
+		u32 type_id;
+		int status;			/* non-zero for error */
+		const struct btf_type *type;
+		const struct btf_member *member;
+		char name[BTF_SHOW_NAME_SIZE];	/* space for member name/type */
+	} state;
+	struct {
+		u32 size;
+		void *head;
+		void *data;
+		u8 safe[BTF_SHOW_OBJ_SAFE_SIZE];
+	} obj;
+};
+
 struct btf_kind_operations {
 	s32 (*check_meta)(struct btf_verifier_env *env,
 			  const struct btf_type *t,
@@ -5228,8 +5313,8 @@ int btf_prepare_func_args(struct bpf_verifier_env *env, int subprog,
 	return 0;
 }
 
-void btf_type_seq_show(const struct btf *btf, u32 type_id, void *obj,
-		       struct seq_file *m)
+static void btf_type_show(const struct btf *btf, u32 type_id, void *obj,
+			  struct btf_show *show)
 {
 	const struct btf_type *t = btf_type_by_id(btf, type_id);
 
@@ -5240,14 +5325,14 @@ void btf_type_seq_show(const struct btf *btf, u32 type_id, void *obj,
 	btf_type_ops(t)->show(btf, t, type_id, obj, 0, show);
 }
 
-__printf(2, 0) static void btf_seq_show(struct btf_show *show, const char *fmt,
-					va_list args)
+static void btf_seq_show(struct btf_show *show, const char *fmt,
+			 va_list args)
 {
 	seq_vprintf((struct seq_file *)show->target, fmt, args);
 }
 
-int btf_type_seq_show_flags(const struct btf *btf, u32 type_id,
-			    void *obj, struct seq_file *m, u64 flags)
+static int btf_type_seq_show_flags(const struct btf *btf, u32 type_id,
+				   void *obj, struct seq_file *m, u64 flags)
 {
 	struct btf_show sseq;
 
@@ -5274,8 +5359,8 @@ struct btf_show_snprintf {
 	int len;		/* length we would have written */
 };
 
-__printf(2, 0) static void btf_snprintf_show(struct btf_show *show, const char *fmt,
-					     va_list args)
+static void btf_snprintf_show(struct btf_show *show, const char *fmt,
+			      va_list args)
 {
 	struct btf_show_snprintf *ssnprintf = (struct btf_show_snprintf *)show;
 	int len;
