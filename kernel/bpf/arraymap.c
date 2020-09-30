@@ -15,7 +15,8 @@
 #include "map_in_map.h"
 
 #define ARRAY_CREATE_FLAG_MASK \
-	(BPF_F_NUMA_NODE | BPF_F_MMAPABLE | BPF_F_ACCESS_MASK)
+	(BPF_F_NUMA_NODE | BPF_F_MMAPABLE | BPF_F_ACCESS_MASK | \
+	 BPF_F_PRESERVE_ELEMS)
 
 static void bpf_array_free_percpu(struct bpf_array *array)
 {
@@ -62,6 +63,10 @@ int array_map_alloc_check(union bpf_attr *attr)
 
 	if (attr->map_type != BPF_MAP_TYPE_ARRAY &&
 	    attr->map_flags & BPF_F_MMAPABLE)
+		return -EINVAL;
+
+	if (attr->map_type != BPF_MAP_TYPE_PERF_EVENT_ARRAY &&
+	    attr->map_flags & BPF_F_PRESERVE_ELEMS)
 		return -EINVAL;
 
 	if (attr->value_size > KMALLOC_MAX_SIZE)
@@ -1150,6 +1155,13 @@ static void perf_event_fd_array_release(struct bpf_map *map,
 			fd_array_map_delete_elem(map, &i);
 	}
 	rcu_read_unlock();
+}
+
+static void perf_event_fd_array_map_free(struct bpf_map *map)
+{
+	if (map->map_flags & BPF_F_PRESERVE_ELEMS)
+		bpf_fd_array_map_clear(map);
+	fd_array_map_free(map);
 }
 
 static int perf_event_array_map_btf_id;
