@@ -16,7 +16,7 @@
 
 #define ARRAY_CREATE_FLAG_MASK \
 	(BPF_F_NUMA_NODE | BPF_F_MMAPABLE | BPF_F_ACCESS_MASK | \
-	 BPF_F_PRESERVE_ELEMS)
+	 BPF_F_PRESERVE_ELEMS | BPF_F_INNER_MAP)
 
 static void bpf_array_free_percpu(struct bpf_array *array)
 {
@@ -62,7 +62,7 @@ int array_map_alloc_check(union bpf_attr *attr)
 		return -EINVAL;
 
 	if (attr->map_type != BPF_MAP_TYPE_ARRAY &&
-	    attr->map_flags & BPF_F_MMAPABLE)
+	    attr->map_flags & (BPF_F_MMAPABLE | BPF_F_INNER_MAP))
 		return -EINVAL;
 
 	if (attr->map_type != BPF_MAP_TYPE_PERF_EVENT_ARRAY &&
@@ -502,8 +502,10 @@ static int array_map_mmap(struct bpf_map *map, struct vm_area_struct *vma)
 static bool array_map_meta_equal(const struct bpf_map *meta0,
 				 const struct bpf_map *meta1)
 {
-	return meta0->max_entries == meta1->max_entries &&
-		bpf_map_meta_equal(meta0, meta1);
+	if (!bpf_map_meta_equal(meta0, meta1))
+		return false;
+	return meta0->map_flags & BPF_F_INNER_MAP ? true :
+	       meta0->max_entries == meta1->max_entries;
 }
 
 struct bpf_iter_seq_array_map_info {
