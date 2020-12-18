@@ -2364,7 +2364,6 @@ static int do_epoll_pwait(int epfd, struct epoll_event __user *events,
 			  int maxevents, struct timespec64 *to,
 			  const sigset_t __user *sigmask, size_t sigsetsize)
 {
-	struct timespec64 to;
 	int error;
 
 	/*
@@ -2375,8 +2374,7 @@ static int do_epoll_pwait(int epfd, struct epoll_event __user *events,
 	if (error)
 		return error;
 
-	error = do_epoll_wait(epfd, events, maxevents,
-			      ep_timeout_to_timespec(&to, timeout));
+	error = do_epoll_wait(epfd, events, maxevents, to);
 
 	restore_saved_sigmask_unless(error == -EINTR);
 
@@ -2418,7 +2416,6 @@ static int do_compat_epoll_pwait(int epfd, struct epoll_event __user *events,
 				 const compat_sigset_t __user *sigmask,
 				 compat_size_t sigsetsize)
 {
-	struct timespec64 to;
 	long err;
 
 	/*
@@ -2429,8 +2426,7 @@ static int do_compat_epoll_pwait(int epfd, struct epoll_event __user *events,
 	if (err)
 		return err;
 
-	err = do_epoll_wait(epfd, events, maxevents,
-			    ep_timeout_to_timespec(&to, timeout));
+	err = do_epoll_wait(epfd, events, maxevents, timeout);
 
 	restore_saved_sigmask_unless(err == -EINTR);
 
