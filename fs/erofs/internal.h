@@ -193,6 +193,9 @@ static inline int erofs_wait_on_workgroup_freezed(struct erofs_workgroup *grp)
 	return v;
 }
 #endif	/* !CONFIG_SMP */
+
+/* hard limit of pages per compressed cluster */
+#define Z_EROFS_CLUSTER_MAX_PAGES       (CONFIG_EROFS_FS_CLUSTER_PAGE_LIMIT)
 #endif	/* !CONFIG_EROFS_FS_ZIP */
 
 /* we strictly follow PAGE_SIZE and no buffer head yet */
@@ -396,31 +399,6 @@ int erofs_namei(struct inode *dir, struct qstr *name,
 
 /* dir.c */
 extern const struct file_operations erofs_dir_fops;
-
-/* utils.c / zdata.c */
-struct page *erofs_allocpage(struct list_head *pool, gfp_t gfp);
-
-#if (EROFS_PCPUBUF_NR_PAGES > 0)
-void *erofs_get_pcpubuf(unsigned int pagenr);
-#define erofs_put_pcpubuf(buf) do { \
-	(void)&(buf);	\
-	preempt_enable();	\
-} while (0)
-#else
-static inline void *erofs_get_pcpubuf(unsigned int pagenr)
-{
-	int retried = 0;
-
-	while (1) {
-		void *p = vm_map_ram(pages, count, -1, PAGE_KERNEL);
-
-		/* retry two more times (totally 3 times) */
-		if (p || ++retried >= 3)
-			return p;
-		vm_unmap_aliases();
-	}
-	return NULL;
-}
 
 /* pcpubuf.c */
 void *erofs_get_pcpubuf(unsigned int requiredpages);
