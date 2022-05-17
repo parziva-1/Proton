@@ -654,53 +654,6 @@ static struct bpf_prog_list *find_detach_entry(struct list_head *progs,
 }
 
 /**
- * __cgroup_bpf_detach() - Detach the program or link from a cgroup, and
- *                         propagate the change to descendants
- * @cgrp: The cgroup which descendants to traverse
- * @prog: A program to detach or NULL
- * @prog: A link to detach or NULL
- * @type: Type of detach operation
- *
- * At most one of @prog or @link can be non-NULL.
- * Must be called with cgroup_mutex held.
- */
-int __cgroup_bpf_detach(struct cgroup *cgrp, struct bpf_prog *prog,
-			struct bpf_cgroup_link *link, enum bpf_attach_type type)
-{
-	struct list_head *progs = &cgrp->bpf.progs[type];
-	u32 flags = cgrp->bpf.flags[type];
-	struct bpf_prog_list *pl;
-	struct bpf_prog *old_prog;
-	int err;
-
-	if (prog && link)
-		/* only one of prog or link can be specified */
-		return -EINVAL;
-
-	pl = find_detach_entry(progs, prog, link, flags & BPF_F_ALLOW_MULTI);
-	if (IS_ERR(pl))
-		return PTR_ERR(pl);
-
-	/* mark it deleted, so it's ignored while recomputing effective */
-	old_prog = pl->prog;
-	pl->prog = NULL;
-	pl->link = NULL;
-
-	if (!prog && !link)
-		/* to detach MULTI prog the user has to specify valid FD
-		 * of the program or link to be detached
-		 */
-		return ERR_PTR(-EINVAL);
-
-	/* find the prog or link and detach it */
-	list_for_each_entry(pl, progs, node) {
-		if (pl->prog == prog && pl->link == link)
-			return pl;
-	}
-	return ERR_PTR(-ENOENT);
-}
-
-/**
  * purge_effective_progs() - After compute_effective_progs fails to alloc new
  *			     cgrp->bpf.inactive table we can recover by
  *			     recomputing the array in place.
@@ -742,10 +695,8 @@ static void purge_effective_progs(struct cgroup *cgrp, struct bpf_prog *prog,
 				pos++;
 			}
 		}
-
-		/* no link or prog match, skip the cgroup of this layer */
-		continue;
 found:
+		BUG_ON(!cg);
 		progs = rcu_dereference_protected(
 				desc->bpf.effective[type],
 				lockdep_is_held(&cgroup_mutex));
@@ -805,12 +756,6 @@ int __cgroup_bpf_detach(struct cgroup *cgrp, struct bpf_prog *prog,
 		bpf_prog_put(old_prog);
 	static_branch_dec(&cgroup_bpf_enabled_key);
 	return 0;
-
-cleanup:
-	/* restore back prog or link */
-	pl->prog = old_prog;
-	pl->link = link;
-	return err;
 }
 
 /* Must be called with cgroup_mutex held to avoid races. */
