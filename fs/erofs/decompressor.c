@@ -148,22 +148,33 @@ static int z_erofs_lz4_decompress(struct z_erofs_decompress_req *rq, u8 *out,
 		}
 	}
 
-	copied = false;
-	inlen = rq->inputsize - inputmargin;
-	if (rq->inplace_io) {
-		const uint oend = (rq->pageofs_out +
-				   rq->outputsize) & ~PAGE_MASK;
-		if (rq->partial_decoding || !support_0padding ||
-		    rq->out[nrpages_out - 1] != rq->in[0] ||
-		    rq->inputsize - oend <
-		      LZ4_DECOMPRESS_INPLACE_MARGIN(inlen)) {
-			src = generic_copy_inplace_data(rq, src, inputmargin);
-			inputmargin = 0;
-			copied = true;
-		} else {
-			src = obase + ((nrpages_out - 1) << PAGE_SHIFT);
-		}
-	}
+	rq->inputsize -= inputmargin;
+	src = z_erofs_handle_inplace_io(rq, headpage, &inputmargin, &maptype,
+					support_0padding);
+	if (IS_ERR(src))
+		return PTR_ERR(src);
+
+	/* legacy format could compress extra data in a pcluster. */
+	if (rq->partial_decoding || !support_0padding)
+#if defined(CONFIG_ARM64) && defined(CONFIG_KERNEL_MODE_NEON)
+		ret = LZ4_arm64_decompress_safe_partial(src + inputmargin, out,
+				rq->inputsize, rq->outputsize, rq->inplace_io);
+#else
+		ret = LZ4_decompress_safe_partial(src + inputmargin, out,
+				rq->inputsize, rq->outputsize, rq->outputsize);
+#endif
+	else
+#if defined(CONFIG_ARM64) && defined(CONFIG_KERNEL_MODE_NEON)
+		ret = LZ4_arm64_decompress_safe(src + inputmargin, out,
+					  rq->inputsize, rq->outputsize, rq->inplace_io);
+#else
+		ret = LZ4_decompress_safe(src + inputmargin, out,
+					  rq->inputsize, rq->outputsize);
+#endif
+
+	if (ret != rq->outputsize) {
+		erofs_err(rq->sb, "failed to decompress %d in[%u, %u] out[%u]",
+			  ret, rq->inputsize, inputmargin, rq->outputsize);
 
 	ret = LZ4_decompress_safe_partial(src + inputmargin, out,
 					  inlen, rq->outputsize,
