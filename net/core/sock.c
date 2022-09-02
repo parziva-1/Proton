@@ -1248,7 +1248,7 @@ static int groups_to_user(sockptr_t dst, const struct group_info *src)
 }
 
 static int sk_getsockopt(struct sock *sk, int level, int optname,
-			 sockptr_t optval, sockptr_t optlen)
+			 char __user *optval, int __user *optlen)
 {
 	struct socket *sock = sk->sk_socket;
 
@@ -1591,9 +1591,7 @@ lenout:
 int sock_getsockopt(struct socket *sock, int level, int optname,
 		    char __user *optval, int __user *optlen)
 {
-	return sk_getsockopt(sock->sk, level, optname,
-			     USER_SOCKPTR(optval),
-			     USER_SOCKPTR(optlen));
+	return sk_getsockopt(sock->sk, level, optname, optval, optlen);
 }
 
 /*
