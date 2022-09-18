@@ -830,11 +830,20 @@ config ARCH_HAS_PTE_SPECIAL
 config ARCH_HAS_HUGEPD
 	bool
 
+
 config HPA
 	bool "High-order Pages Allocator"
 	select CMA
+        help
+          Turns on High-order Pages Allocator based on page migration.
+
+config LRU_GEN
+	bool "Multi-Gen LRU"
+	depends on MMU
+	# make sure page->flags has enough spare bits
+	depends on 64BIT || !SPARSEMEM || SPARSEMEM_VMEMMAP
 	help
-	  Turns on High-order Pages Allocator based on page migration.
+	  A high performance LRU implementation to overcommit memory.
 
 config ARCH_SUPPORTS_SPECULATIVE_PAGE_FAULT
 	bool "Arch supports speculative page fault"
