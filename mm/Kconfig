@@ -830,13 +830,17 @@ config ARCH_HAS_PTE_SPECIAL
 config ARCH_HAS_HUGEPD
 	bool
 
-
 config HPA
 	bool "High-order Pages Allocator"
 	select CMA
         help
           Turns on High-order Pages Allocator based on page migration.
 
+config ARCH_SUPPORTS_SPECULATIVE_PAGE_FAULT
+        bool "Arch supports speculative page fault"
+        default n
+
+# multi-gen LRU {
 config LRU_GEN
 	bool "Multi-Gen LRU"
 	depends on MMU
@@ -845,9 +849,15 @@ config LRU_GEN
 	help
 	  A high performance LRU implementation to overcommit memory.
 
-config ARCH_SUPPORTS_SPECULATIVE_PAGE_FAULT
-	bool "Arch supports speculative page fault"
-	default n
+config LRU_GEN_STATS
+	bool "Full stats for debugging"
+	depends on LRU_GEN
+	help
+	  Do not enable this option unless you plan to look at historical stats
+	  from evicted generations for debugging purpose.
+
+	  This option has a per-memcg and per-node memory overhead.
+# }
 
 config SPECULATIVE_PAGE_FAULT
        bool "Speculative page faults"
