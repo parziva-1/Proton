@@ -311,9 +311,15 @@ static ssize_t rmi_driver_bootloader_id_show(struct device *dev,
 	if (!fn)
 		return -ENODEV;
 
-	f34 = dev_get_drvdata(&fn->dev);
-	if (!f34)
-		return -ENODEV;
+		if (f34->bl_version == 5)
+			return sysfs_emit(buf, "%c%c\n",
+					  f34->bootloader_id[0],
+					  f34->bootloader_id[1]);
+		else
+			return sysfs_emit(buf, "V%d.%d\n",
+					  f34->bootloader_id[1],
+					  f34->bootloader_id[0]);
+	}
 
 	if (f34->bl_version == 5)
 		return sysfs_emit(buf, "%c%c\n",
@@ -339,9 +345,8 @@ static ssize_t rmi_driver_configuration_id_show(struct device *dev,
 	if (!fn)
 		return -ENODEV;
 
-	f34 = dev_get_drvdata(&fn->dev);
-	if (!f34)
-		return -ENODEV;
+		return sysfs_emit(buf, "%s\n", f34->configuration_id);
+	}
 
 
 	return sysfs_emit(buf, "%s\n", f34->configuration_id);
