@@ -565,9 +565,6 @@ int __mdiobus_read(struct mii_bus *bus, int addr, u32 regnum)
 
 	WARN_ON_ONCE(!mutex_is_locked(&bus->mdio_lock));
 
-	if (addr >= PHY_MAX_ADDR)
-		return -ENXIO;
-
 	if (bus->read)
 		retval = bus->read(bus, addr, regnum);
 	else
@@ -595,9 +592,6 @@ int __mdiobus_write(struct mii_bus *bus, int addr, u32 regnum, u16 val)
 	int err;
 
 	WARN_ON_ONCE(!mutex_is_locked(&bus->mdio_lock));
-
-	if (addr >= PHY_MAX_ADDR)
-		return -ENXIO;
 
 	if (bus->write)
 		err = bus->write(bus, addr, regnum, val);
