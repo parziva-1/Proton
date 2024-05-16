@@ -5605,6 +5605,10 @@ long sched_setaffinity(pid_t pid, const struct cpumask *in_mask)
 	cpumask_var_t cpus_allowed, new_mask;
 	struct task_struct *p;
 	int retval = 0;
+#ifdef CONFIG_SCHED_WALT
+	int dest_cpu;
+	cpumask_t allowed_mask;
+#endif
 
 	rcu_read_lock();
 
@@ -5629,10 +5633,8 @@ long sched_setaffinity(pid_t pid, const struct cpumask *in_mask)
 	 * Check if the target task is part of a Unity-based game and silently
 	 * ignore the setaffinity request so that it can't sabotage itself.
 	 */
-
 	if (task_is_unity_game(p))
 		goto out_put_task;
-
 
 	if (p->flags & PF_NO_SETAFFINITY) {
 		retval = -EINVAL;
