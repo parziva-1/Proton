@@ -513,6 +513,27 @@ struct sk_buff *udp_gro_receive(struct list_head *head, struct sk_buff *skb,
 	int flush = 1;
 	struct sock *sk2 = sk;
 
+	/* WA for UDP GRO fraglist.
+	 * check sk to use UDP GRO for local only.
+	 */
+	if (!sk2) {
+		if (NAPI_GRO_CB(skb)->is_ipv6)
+			sk2 = udp6_lib_lookup_skb(skb, uh->source, uh->dest);
+		else
+			sk2 = udp4_lib_lookup_skb(skb, uh->source, uh->dest);
+	}
+
+	if (sk2) {
+		unsigned int margin_len;
+
+		margin_len = NAPI_GRO_CB(skb)->is_ipv6 ?
+			sizeof(struct ipv6hdr) : sizeof(struct iphdr);
+		margin_len += sizeof(struct tcphdr);
+
+		if (sk2->sk_state != TCP_ESTABLISHED || skb->len < margin_len)
+			sk2 = NULL;
+	}
+
 	/* We can do L4 aggregation only if the packet can't land in a tunnel
 	 * otherwise we could corrupt the inner stream. Detecting such packets
 	 * cannot be foolproof and the aggregation might still happen in some
