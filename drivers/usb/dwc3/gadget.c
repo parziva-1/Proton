@@ -2097,24 +2097,44 @@ static void dwc3_stop_active_transfers(struct dwc3 *dwc)
 
 static int dwc3_gadget_run_stop(struct dwc3 *dwc, int is_on, int suspend)
 {
-	u32			reg;
-	u32			timeout = 500;
+	u32			reg, reg1;
+	u32			timeout = 2000;
+	u32			saved_config = 0;
+
+	dbg_event(0xFF, "run_stop", is_on);
 
 	if (pm_runtime_suspended(dwc->dev))
 		return 0;
 
-	if (!dwc->vbus_session) {
-		pr_info("%s, runtime_stat %d, disable_depth %d\n",
-			__func__, dwc->dev->power.runtime_status, dwc->dev->power.disable_depth);
-		pr_info("%s, vbus is off. Return!\n", __func__);
-		/* Need to wait for vbus_session(on) from otg driver */
-		return 0;
+	/*
+	 * When operating in USB 2.0 speeds (HS/FS), ensure that
+	 * GUSB2PHYCFG.ENBLSLPM and GUSB2PHYCFG.SUSPHY are cleared before starting
+	 * or stopping the controller. This resolves timeout issues that occur
+	 * during frequent role switches between host and device modes.
+	 *
+	 * Save and clear these settings, then restore them after completing the
+	 * controller start or stop sequence.
+	 *
+	 * This solution was discovered through experimentation as it is not
+	 * mentioned in the dwc3 programming guide. It has been tested on an
+	 * Exynos platforms.
+	 */
+	reg = dwc3_readl(dwc->regs, DWC3_GUSB2PHYCFG(0));
+	if (reg & DWC3_GUSB2PHYCFG_SUSPHY) {
+		saved_config |= DWC3_GUSB2PHYCFG_SUSPHY;
+		reg &= ~DWC3_GUSB2PHYCFG_SUSPHY;
 	}
+
+	if (reg & DWC3_GUSB2PHYCFG_ENBLSLPM) {
+		saved_config |= DWC3_GUSB2PHYCFG_ENBLSLPM;
+		reg &= ~DWC3_GUSB2PHYCFG_ENBLSLPM;
+	}
+
+	if (saved_config)
+		dwc3_writel(dwc->regs, DWC3_GUSB2PHYCFG(0), reg);
 
 	reg = dwc3_readl(dwc->regs, DWC3_DCTL);
 	if (is_on) {
-		usb_tpmon_init_data();
-
 		if (dwc->revision <= DWC3_REVISION_187A) {
 			reg &= ~DWC3_DCTL_TRGTULST_MASK;
 			reg |= DWC3_DCTL_TRGTULST_RX_DET;
@@ -2122,6 +2142,21 @@ static int dwc3_gadget_run_stop(struct dwc3 *dwc, int is_on, int suspend)
 
 		if (dwc->revision >= DWC3_REVISION_194A)
 			reg &= ~DWC3_DCTL_KEEP_CONNECT;
+
+		dwc3_event_buffers_setup(dwc);
+		__dwc3_gadget_start(dwc);
+
+		reg1 = dwc3_readl(dwc->regs, DWC3_DCFG);
+		reg1 &= ~(DWC3_DCFG_SPEED_MASK);
+
+		if (dwc->maximum_speed == USB_SPEED_SUPER_PLUS)
+			reg1 |= DWC3_DCFG_SUPERSPEED_PLUS;
+		else if (dwc->maximum_speed == USB_SPEED_HIGH)
+			reg1 |= DWC3_DCFG_HIGHSPEED;
+		else
+			reg1 |= DWC3_DCFG_SUPERSPEED;
+		dwc3_writel(dwc->regs, DWC3_DCFG, reg1);
+
 		reg |= DWC3_DCTL_RUN_STOP;
 
 		if (dwc->has_hibernation)
@@ -2129,26 +2164,64 @@ static int dwc3_gadget_run_stop(struct dwc3 *dwc, int is_on, int suspend)
 
 		dwc->pullups_connected = true;
 	} else {
-		dwc3_gadget_link_state_print(dwc, "STOP");
+		dwc3_gadget_disable_irq(dwc);
+
+		dwc->err_evt_seen = false;
+		dwc->pullups_connected = false;
+		__dwc3_gadget_ep_disable(dwc->eps[0]);
+		__dwc3_gadget_ep_disable(dwc->eps[1]);
+
+		/*
+		 * According to dwc3 databook, it is must to remove any active
+		 * transfers before trying to stop USB device controller. Hence
+		 * call dwc3_stop_active_transfers() API before stopping USB
+		 * device controller. Also don't block ringing of doorbell until
+		 * controller is halted (i.e. second param as false).
+		 */
+		dwc3_stop_active_transfers(dwc, false);
+
 		reg &= ~DWC3_DCTL_RUN_STOP;
 
 		if (dwc->has_hibernation && !suspend)
 			reg &= ~DWC3_DCTL_KEEP_CONNECT;
-
-		dwc->pullups_connected = false;
 	}
 
 	dwc3_writel(dwc->regs, DWC3_DCTL, reg);
 
+	/* Controller is not halted until the events are acknowledged */
+	if (!is_on) {
+		/*
+		 * Clear out any pending events (i.e. End Transfer Command
+		 * Complete).
+		 */
+		reg1 = dwc3_readl(dwc->regs, DWC3_GEVNTCOUNT(0));
+		reg1 &= DWC3_GEVNTCOUNT_MASK;
+		dbg_log_string("remaining EVNTCOUNT(0)=%d", reg1);
+		dwc3_writel(dwc->regs, DWC3_GEVNTCOUNT(0), reg1);
+		dwc3_notify_event(dwc, DWC3_GSI_EVT_BUF_CLEAR, 0);
+		dwc3_notify_event(dwc, DWC3_CONTROLLER_NOTIFY_CLEAR_DB, 0);
+	}
+
 	do {
+		usleep_range(1000, 2000);
 		reg = dwc3_readl(dwc->regs, DWC3_DSTS);
 		reg &= DWC3_DSTS_DEVCTRLHLT;
 	} while (--timeout && !(!is_on ^ !reg));
 
+	if (saved_config) {
+		reg = dwc3_readl(dwc->regs, DWC3_GUSB2PHYCFG(0));
+		reg |= saved_config;
+		dwc3_writel(dwc->regs, DWC3_GUSB2PHYCFG(0), reg);
+	}
+
 	if (!timeout) {
-		dev_err(dwc->dev, "gadget %s timeout, DSTS : 0x%x\n",
-					is_on ? "run" : "stop", reg);
-		return 0;
+		dev_err(dwc->dev, "failed to %s controller\n",
+				is_on ? "start" : "stop");
+		if (is_on)
+			dbg_event(0xFF, "STARTTOUT", reg);
+		else
+			dbg_event(0xFF, "STOPTOUT", reg);
+		return -ETIMEDOUT;
 	}
 
 	return 0;
