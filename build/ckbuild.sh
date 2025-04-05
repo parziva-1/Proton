@@ -81,7 +81,7 @@ fi
 
 ## Customizable vars
 # Kernel verison
-K_VER="v3"
+K_VER="v3.2"
 
 # Toggles
 USE_CCACHE=1
@@ -161,8 +161,8 @@ if [ $DO_KSU -eq 1 ]; then
 else
     FK_TYPE="Vanilla"
 fi
-ZIP_PATH="$KDIR/build/Proton+_$K_VER-$FK_TYPE-$CODENAME-$DATE.zip"
-TAR_PATH="$KDIR/build/Proton+_$K_VER-$FK_TYPE-$CODENAME-$DATE.tar"
+ZIP_PATH="$KDIR/build/ProtonPlus-$K_VER-$FK_TYPE-$CODENAME-$DATE.zip"
+TAR_PATH="$KDIR/build/Nigga_$K_VER-$FK_TYPE-$CODENAME-$DATE.tar"
 
 echo -e "\nINFO: Build info:
 - Device: $DEVICE ($CODENAME)
