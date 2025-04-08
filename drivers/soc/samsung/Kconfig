@@ -468,6 +468,48 @@ config EXYNOS_PM_DVS
 	tristate "Enable Exynos dynamic voltage setting"
 	default m
 
+config SOC_EXYNOS2100_UNDERVOLT
+	bool "Undervolting support for EXYNOS2100 SoC"
+	depends on SOC_EXYNOS2100
+	help
+	  Allows to undervolt the EXYNOS 2100 SoC via setting a percentage.
+
+config SOC_EXYNOS2100_CL0_UV
+	int "Undervolting percentage for cluster 0 of EXYNOS2100 (little cluster)"
+	range 0 100
+	depends on SOC_EXYNOS2100_UNDERVOLT
+	default 0
+	help
+	  Percentage to undervolt the little cluster of the EXYNOS 2100 SoC.
+	  Set a value between 0 and 100.
+
+config SOC_EXYNOS2100_CL1_UV
+	int "Undervolting percentage for cluster 1 of EXYNOS2100 (big cluster)"
+	range 0 100
+	depends on SOC_EXYNOS2100_UNDERVOLT
+	default 0
+	help
+	  Percentage to undervolt the big cluster of the EXYNOS 2100 SoC.
+	  Set a value between 0 and 100.
+
+config SOC_EXYNOS2100_CL2_UV
+	int "Undervolting percentage for cluster 2 of EXYNOS2100 (prime cluster)"
+	range 0 100
+	depends on SOC_EXYNOS2100_UNDERVOLT
+	default 0
+	help
+	  Percentage to undervolt the prime cluster of the EXYNOS 2100 SoC.
+	  Set a value between 0 and 100.
+
+config SOC_EXYNOS2100_GPU_UV
+	int "Undervolting percentage for GPU of EXYNOS2100"
+	range 0 100
+	depends on SOC_EXYNOS2100_UNDERVOLT
+	default 0
+	help
+	  Percentage to undervolt the GPU of the EXYNOS 2100 SoC.
+	  Set a value between 0 and 100.
+
 source "drivers/soc/samsung/acpm/Kconfig"
 
 source "drivers/soc/samsung/debug/Kconfig"
