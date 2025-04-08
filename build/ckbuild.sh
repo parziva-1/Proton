@@ -135,7 +135,7 @@ do
 done
 
 if [ $DO_TG -eq 1 ]; then
-IDS="../ids/"
+IDS="$WP/ids"
 ## Secrets
 if ! [ -d "$IDS" ]; then
     git clone -q https://github.com/ProtonKernel/ids $IDS
