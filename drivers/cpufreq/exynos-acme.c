@@ -1242,157 +1242,107 @@ struct freq_volt {
 };
 
 static int init_domain(struct exynos_cpufreq_domain *domain,
-					struct device_node *dn)
+					   struct device_node *dn)
 {
-	unsigned int val, raw_table_size;
-	int index, i;
+	unsigned int raw_table_size;
+	int index, cpu;
 	unsigned int freq_table[100];
 	struct freq_volt *fv_table;
 	const char *buf;
 	int ret;
 
-	/*
-	 * Get cpumask which belongs to domain.
-	 */
+	/* Get cpumask which belongs to the domain */
 	ret = of_property_read_string(dn, "sibling-cpus", &buf);
-	if (ret) {
-		kfree(freq_table);
+	if (ret)
 		return ret;
-	}
 	cpulist_parse(buf, &domain->cpus);
 	cpumask_and(&domain->cpus, &domain->cpus, cpu_possible_mask);
-	if (cpumask_weight(&domain->cpus) == 0) {
-		kfree(freq_table);
+	if (cpumask_weight(&domain->cpus) == 0)
 		return -ENODEV;
-	}
 
 	/* Get CAL ID */
 	ret = of_property_read_u32(dn, "cal-id", &domain->cal_id);
 	if (ret)
 		return ret;
 
-	/*
-	 * Set min/max frequency.
-	 * If max-freq property exists in device tree, max frequency is
-	 * selected to smaller one between the value defined in device
-	 * tree and CAL. In case of min-freq, min frequency is selected
-	 * to bigger one.
-	 */
-	domain->max_freq = cal_dfs_get_max_freq(domain->cal_id);
-	domain->min_freq = cal_dfs_get_min_freq(domain->cal_id);
-
-	if (!of_property_read_u32(dn, "max-freq", &val))
-		domain->max_freq = min(domain->max_freq, val);
-	if (!of_property_read_u32(dn, "min-freq", &val))
-		domain->min_freq = max(domain->min_freq, val);
-
-	domain->max_freq_qos = domain->max_freq;
-	domain->min_freq_qos = domain->min_freq;
-
-	domain->clipped_freq = domain->max_freq;
-
-	/* Get freq-table from device tree and cut the out of range */
-	raw_table_size = of_property_count_u32_elems(dn, "freq-table");
-	if (of_property_read_u32_array(dn, "freq-table",
-				freq_table, raw_table_size)) {
-		pr_err("%s: freq-table does not exist\n", __func__);
+	/* Set min/max frequency from the device tree */
+	if (of_property_read_u32(dn, "max-freq", &domain->max_freq)) {
+		pr_err("%s: max-freq does not exist\n", __func__);
+		return -ENODATA;
+	}
+	if (of_property_read_u32(dn, "min-freq", &domain->min_freq)) {
+		pr_err("%s: min-freq does not exist\n", __func__);
 		return -ENODATA;
 	}
 
-	domain->table_size = 0;
-	for (index = 0; index < raw_table_size; index++) {
-		if (freq_table[index] > domain->max_freq ||
-		    freq_table[index] < domain->min_freq) {
-			freq_table[index] = CPUFREQ_ENTRY_INVALID;
-			continue;
-		}
+	domain->max_freq_qos = domain->max_freq;
+	domain->min_freq_qos = domain->min_freq;
+	domain->clipped_freq  = domain->max_freq;
 
-		domain->table_size++;
+	/* Read frequency table from device tree */
+	raw_table_size = of_property_count_u32_elems(dn, "freq-table");
+	if (of_property_read_u32_array(dn, "freq-table", freq_table, raw_table_size)) {
+		pr_err("%s: freq-table does not exist\n", __func__);
+		return -ENODATA;
 	}
+	domain->table_size = raw_table_size;
 
-	/*
-	 * Get volt table from CAL with given freq-table
-	 * cal_dfs_get_freq_volt_table() is called by filling the desired
-	 * frequency in fv_table, the corresponding volt is filled.
-	 */
-	fv_table = kzalloc(sizeof(struct freq_volt)
-				* (domain->table_size), GFP_KERNEL);
+	/* Allocate and populate frequency-voltage table */
+	fv_table = kzalloc(sizeof(struct freq_volt) * domain->table_size, GFP_KERNEL);
 	if (!fv_table) {
-		pr_err("%s: failed to alloc fv_table\n", __func__);
+		pr_err("%s: failed to allocate fv_table\n", __func__);
 		return -ENOMEM;
 	}
-
-	i = 0;
-	for (index = 0; index < raw_table_size; index++) {
-		if (freq_table[index] == CPUFREQ_ENTRY_INVALID)
-			continue;
-		fv_table[i].freq = freq_table[index];
-		i++;
-	}
+	for (index = 0; index < domain->table_size; index++)
+		fv_table[index].freq = freq_table[index];
 
 	if (cal_dfs_get_freq_volt_table(domain->cal_id,
-				fv_table, domain->table_size)) {
+									fv_table, domain->table_size)) {
 		pr_err("%s: failed to get fv table from CAL\n", __func__);
 		kfree(fv_table);
 		return -EINVAL;
 	}
 
-	/*
-	 * Allocate and initialize frequency table.
-	 * Last row of frequency table must be set to CPUFREQ_TABLE_END.
-	 * Table size should be one larger than real table size.
-	 */
-	domain->freq_table = kzalloc(sizeof(struct cpufreq_frequency_table)
-				* (domain->table_size + 1), GFP_KERNEL);
+	/* Allocate and initialize frequency table */
+	domain->freq_table = kzalloc(sizeof(struct cpufreq_frequency_table) *
+								 (domain->table_size + 1), GFP_KERNEL);
 	if (!domain->freq_table) {
-		kfree(freq_table);
+		kfree(fv_table);
 		return -ENOMEM;
 	}
-
 	for (index = 0; index < domain->table_size; index++) {
 		domain->freq_table[index].driver_data = index;
-		domain->freq_table[index].frequency = fv_table[index].freq;
+		domain->freq_table[index].frequency   = fv_table[index].freq;
 	}
 	domain->freq_table[index].driver_data = index;
-	domain->freq_table[index].frequency = CPUFREQ_TABLE_END;
+	domain->freq_table[index].frequency   = CPUFREQ_TABLE_END;
 
-	/*
-	 * Add OPP table for thermal.
-	 * Thermal CPU cooling is based on the OPP table.
-	 */
-	for (index = domain->table_size -1; index >= 0; index--) {
-		int cpu;
-
+	/* Add OPP table for thermal CPU cooling */
+	for (index = domain->table_size - 1; index >= 0; index--) {
 		for_each_cpu_and(cpu, &domain->cpus, cpu_possible_mask)
 			dev_pm_opp_add(get_cpu_device(cpu),
-				fv_table[index].freq * 1000,
-				fv_table[index].volt);
+						   fv_table[index].freq * 1000,
+						   fv_table[index].volt);
 	}
-
 	kfree(fv_table);
 
-	/*
-	 * Initialize other items.
-	 */
+	/* Initialize additional items */
 	if (of_property_read_bool(dn, "need-awake"))
 		domain->need_awake = true;
 
-	domain->boot_freq = cal_dfs_get_boot_freq(domain->cal_id);
+	domain->boot_freq   = cal_dfs_get_boot_freq(domain->cal_id);
 	domain->resume_freq = cal_dfs_get_resume_freq(domain->cal_id);
 
 	domain->old = get_freq(domain);
 	if (domain->old < domain->min_freq || domain->max_freq < domain->old) {
 		WARN(1, "Out-of-range freq(%dkhz) returned for domain%d in init time\n",
-					domain->old,  domain->id);
+			 domain->old, domain->id);
 		domain->old = domain->boot_freq;
 	}
 
 	mutex_init(&domain->lock);
 
-	/*
-	 * Initialize CPUFreq DVFS Manager
-	 * DVFS Manager is the optional function, it does not check return value
-	 */
+	/* Initialize CPUFreq DVFS Manager (optional, return value ignored) */
 	init_dm(domain, dn);
 
 	dev_pm_opp_of_register_em(&domain->cpus);
@@ -1401,6 +1351,7 @@ static int init_domain(struct exynos_cpufreq_domain *domain,
 
 	return 0;
 }
+
 
 static int exynos_cpufreq_probe(struct platform_device *pdev)
 {
