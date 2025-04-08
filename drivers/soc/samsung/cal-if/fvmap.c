@@ -485,15 +485,14 @@ int fvmap_get_raw_voltage_table(unsigned int id)
 	return 0;
 }
 
-// Undervolting settings
-#define CPU_UV 5 // Percentage to undervolt for CPU.
-#define GPU_UV 2 // Percentage to undervolt for GPU.
+#ifdef CONFIG_SOC_EXYNOS2100_UNDERVOLT
 // Define domain IDs for undervolting
-#define DOMAIN_ID_CPUCL0 0 	// Set domain_id for CPUCL0 here.
-#define DOMAIN_ID_CPUCL1 1 	// Set domain_id for CPUCL1 here.
-#define DOMAIN_ID_CPUCL2 2 	// Set domain_id for CPUCL2 here.
-#define DOMAIN_ID_G3D 9 // Set domain_id for GPU (G3D)
-#define DOMAIN_ID_INTG3D 4 // Set domain_id for GPU (INTG3D)
+#define EXYNOS2100_DOMAIN_ID_CPUCL0 0 	// Set domain_id for CPUCL0 here.
+#define EXYNOS2100_DOMAIN_ID_CPUCL1 1 	// Set domain_id for CPUCL1 here.
+#define EXYNOS2100_DOMAIN_ID_CPUCL2 2 	// Set domain_id for CPUCL2 here.
+#define EXYNOS2100_DOMAIN_ID_G3D 9 	// Set domain_id for GPU (G3D)
+#define EXYNOS2100_DOMAIN_ID_INTG3D 4 	// Set domain_id for GPU (INTG3D)
+#endif
 
 static void fvmap_copy_from_sram(void __iomem *map_base, void __iomem *sram_base)
 {
@@ -555,18 +554,43 @@ static void fvmap_copy_from_sram(void __iomem *map_base, void __iomem *sram_base
 			}
 		}
 
-		/* Apply undervolt if the domain is CPUCL0, CPUCL1 or CPUCL2 */
-		if (fvmap_header[i].domain_id == DOMAIN_ID_CPUCL0 || fvmap_header[i].domain_id == DOMAIN_ID_CPUCL1 || fvmap_header[i].domain_id == DOMAIN_ID_CPUCL2) {
-			for (j = 0; j < fvmap_header[i].num_of_lv; j++) {
-				old->table[j].volt = (old->table[j].volt * (100 - CPU_UV)) / 100;
-			}
-		}
-        /* Apply undervolt if the domain is G3D or INTG3D */
-        if (fvmap_header[i].domain_id == DOMAIN_ID_G3D || fvmap_header[i].domain_id == DOMAIN_ID_INTG3D) {
-            for (j = 0; j < fvmap_header[i].num_of_lv; j++) {
-                old->table[j].volt = (old->table[j].volt * (100 - GPU_UV)) / 100;
-            }
-        }
+#ifdef CONFIG_SOC_EXYNOS2100_UNDERVOLT
+#if CONFIG_SOC_EXYNOS2100_CL0_UV != 0
+				/* Apply undervolt if the domain is CPUCL0 */
+				if (fvmap_header[i].domain_id == EXYNOS2100_DOMAIN_ID_CPUCL0) {
+					for (j = 0; j < fvmap_header[i].num_of_lv; j++) {
+						old->table[j].volt = (old->table[j].volt * (100 - CONFIG_SOC_EXYNOS2100_CL0_UV)) / 100;
+					}
+				}
+#endif
+
+#if CONFIG_SOC_EXYNOS2100_CL1_UV != 0
+				/* Apply undervolt if the domain is CPUCL1 */
+				if (fvmap_header[i].domain_id == EXYNOS2100_DOMAIN_ID_CPUCL1) {
+					for (j = 0; j < fvmap_header[i].num_of_lv; j++) {
+						old->table[j].volt = (old->table[j].volt * (100 - CONFIG_SOC_EXYNOS2100_CL1_UV)) / 100;
+					}
+				}
+#endif
+
+#if CONFIG_SOC_EXYNOS2100_CL2_UV != 0
+				/* Apply undervolt if the domain is CPUCL2 */
+				if (fvmap_header[i].domain_id == EXYNOS2100_DOMAIN_ID_CPUCL2) {
+					for (j = 0; j < fvmap_header[i].num_of_lv; j++) {
+						old->table[j].volt = (old->table[j].volt * (100 - CONFIG_SOC_EXYNOS2100_CL2_UV)) / 100;
+					}
+				}
+#endif
+
+#if CONFIG_SOC_EXYNOS2100_GPU_UV != 0
+				/* Apply undervolt if the domain is G3D or INTG3D */
+				if (fvmap_header[i].domain_id == EXYNOS2100_DOMAIN_ID_G3D || fvmap_header[i].domain_id == EXYNOS2100_DOMAIN_ID_INTG3D) {
+					for (j = 0; j < fvmap_header[i].num_of_lv; j++) {
+						old->table[j].volt = (old->table[j].volt * (100 - CONFIG_SOC_EXYNOS2100_GPU_UV)) / 100;
+					}
+				}
+#endif
+#endif
 
 		for (j = 0; j < fvmap_header[i].num_of_lv; j++) {
 			new->table[j].rate = old->table[j].rate;
