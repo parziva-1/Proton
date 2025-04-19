@@ -132,6 +132,15 @@ do
         echo -e "\nINFO: oshi.at argument passed, build will be uploaded to oshi.at"
         DO_OSHI=1
     fi
+    if [[ "$arg" == *l* ]]; then
+        echo "INFO: Full-LTO argument passed"
+        echo "WARNING: Full-LTO is VERY resource heavy and may take a long time to compile"
+        DO_FLTO=1
+    fi
+    if [[ "$arg" == *r* ]]; then
+        echo "INFO: config regeneration mode"
+        DO_REGEN=1
+    fi
 done
 
 if [ $DO_TG -eq 1 ]; then
@@ -300,6 +309,17 @@ build() {
 
     if [ $DO_MENUCONFIG = "1" ]; then
         make O=out menuconfig
+    fi
+
+    if [[ "$DO_REGEN" = "1" ]]; then
+        cp -f out/.config arch/arm64/configs/$DEFCONFIG
+        echo "INFO: Configuration regenerated. Check the changes!"
+        exit 0
+    fi
+
+    if [[ "$DO_FLTO" == "1" ]]; then
+        scripts/config --file "$KDIR/out/.config" --enable CONFIG_LTO_CLANG
+        scripts/config --file "$KDIR/out/.config" --disable CONFIG_THINLTO
     fi
 
     ## Start the build
