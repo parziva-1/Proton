@@ -166,7 +166,6 @@ LINUX_VER=$(make kernelversion 2>/dev/null)
 FK_TYPE=""
 if [ $DO_KSU -eq 1 ]; then
     FK_TYPE="KSU"
-    DEFCONFIG="protonksu_exynos2100-r9sxxx_defconfig"
 else
     FK_TYPE="Vanilla"
 fi
@@ -305,13 +304,17 @@ build() {
     # Delete leftovers
     rm -f $OUT_KERNEL
 
-    make -j$(nproc --all) O=out CC="clang" CROSS_COMPILE="$CCARM64_PREFIX" $DEFCONFIG 2>&1 | tee log.txt
+    make -j$(nproc --all) O=out CC="clang" CROSS_COMPILE="$CCARM64_PREFIX" $DEFCONFIG $([[ "$DO_KSU" == "1" ]] && echo "ksu.config") 2>&1 | tee log.txt
 
     if [ $DO_MENUCONFIG = "1" ]; then
         make O=out menuconfig
     fi
 
     if [[ "$DO_REGEN" = "1" ]]; then
+        if [[ "$DO_KSU" = "1" ]]; then
+            echo "ERROR: Can't regenerate with KSU argument"
+            exit 1
+        fi
         cp -f out/.config arch/arm64/configs/$DEFCONFIG
         echo "INFO: Configuration regenerated. Check the changes!"
         exit 0
