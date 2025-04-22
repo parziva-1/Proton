@@ -80,8 +80,8 @@ else
 fi
 
 ## Customizable vars
-# Kernel verison
-K_VER="v3.2"
+# Kernel version
+K_VER="v4.ඞ"
 
 # Toggles
 USE_CCACHE=1
@@ -300,6 +300,7 @@ build() {
     export LLVM=1
     export LLVM_IAS=1
     export ARCH=arm64
+    VERSION_STR="\"-ProtonPlus-$K_VER\""
 
     # Delete leftovers
     rm -f $OUT_KERNEL
@@ -319,6 +320,8 @@ build() {
         echo "INFO: Configuration regenerated. Check the changes!"
         exit 0
     fi
+
+    scripts/config --file "$KDIR/out/.config" --set-val LOCALVERSION "$VERSION_STR"
 
     if [[ "$DO_FLTO" == "1" ]]; then
         scripts/config --file "$KDIR/out/.config" --enable CONFIG_LTO_CLANG
