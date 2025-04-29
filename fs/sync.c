@@ -169,9 +169,9 @@ SYSCALL_DEFINE1(syncfs, int, fd)
 	int ret;
 
 	if (!fsync_enabled)
-		return 0;
+	return 0;
 
-	f = fdget(fd);
+f	 = fdget(fd);
 
 	if (!f.file)
 		return -EBADF;
@@ -201,7 +201,11 @@ int vfs_fsync_range(struct file *file, loff_t start, loff_t end, int datasync)
 	struct inode *inode = file->f_mapping->host;
 
 	if (!fsync_enabled)
+<<<<<<< HEAD
 		return 0;
+=======
+	return 0;
+>>>>>>> 284198e8ffd6 (fs: fsync on/off support)
 
 	if (!file->f_op->fsync)
 		return -EINVAL;
@@ -234,7 +238,11 @@ static int do_fsync(unsigned int fd, int datasync)
 	int ret = -EBADF;
 
 	if (!fsync_enabled)
+<<<<<<< HEAD
 		return 0;
+=======
+	return 0;
+>>>>>>> 284198e8ffd6 (fs: fsync on/off support)
 
 	f = fdget(fd);
 
@@ -249,7 +257,11 @@ static int do_fsync(unsigned int fd, int datasync)
 SYSCALL_DEFINE1(fsync, unsigned int, fd)
 {
 	if (!fsync_enabled)
+<<<<<<< HEAD
 		return 0;
+=======
+	return 0;
+>>>>>>> 284198e8ffd6 (fs: fsync on/off support)
 
 	return do_fsync(fd, 0);
 }
@@ -257,7 +269,11 @@ SYSCALL_DEFINE1(fsync, unsigned int, fd)
 SYSCALL_DEFINE1(fdatasync, unsigned int, fd)
 {
 	if (!fsync_enabled)
+<<<<<<< HEAD
 		return 0;
+=======
+	return 0;
+>>>>>>> 284198e8ffd6 (fs: fsync on/off support)
 
 	return do_fsync(fd, 1);
 }
@@ -271,7 +287,11 @@ int sync_file_range(struct file *file, loff_t offset, loff_t nbytes,
 	umode_t i_mode;
 
 	if (!fsync_enabled)
+<<<<<<< HEAD
 		return 0;
+=======
+	return 0;
+>>>>>>> 284198e8ffd6 (fs: fsync on/off support)
 
 	ret = -EINVAL;
 	if (flags & ~VALID_FLAGS)
