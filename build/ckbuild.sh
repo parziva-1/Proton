@@ -46,9 +46,10 @@ fi
 export PATH="$(pwd)/build/bin:$PATH"
 
 # Directories
-AC_DIR="$WP/aospclang"
-PC_DIR="$WP/protonclang"
-LZ_DIR="$WP/lolzclang"
+TC_DIR="$WP/toolchains"
+AC_DIR="$TC_DIR/aospclang"
+PC_DIR="$TC_DIR/protonclang"
+LZ_DIR="$TC_DIR/lolzclang"
 AK3_DIR="$WP/AK3-r9s"
 AK3_BRANCH="r9s"
 KDIR="$(readlink -f .)"
