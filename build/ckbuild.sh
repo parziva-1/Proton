@@ -97,7 +97,7 @@ fi
 
 ## Customizable vars
 # Kernel version
-K_VER="v5.2"
+K_VER="v5.2.1"
 # Toggles
 USE_CCACHE=1
 DO_TAR="1"
