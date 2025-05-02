@@ -54,6 +54,11 @@ AK3_DIR="$WP/AK3-r9s"
 AK3_BRANCH="r9s"
 KDIR="$(readlink -f .)"
 
+# Ensure the toolchains directory exists
+if [[ ! -d "$TC_DIR" ]]; then
+    mkdir -p "$TC_DIR"
+fi
+
 ## Inherited paths
 OUTDIR="$KDIR/out"
 MOD_OUTDIR="$KDIR/modules_out"
