@@ -243,6 +243,7 @@ snvm.ko
 mfc_charger.ko
 pdic_max77705.ko
 synaptics_ts.ko
+slsi_ts.ko
 sec_direct_charger.ko
 sec_pd.ko
 sec-battery.ko
