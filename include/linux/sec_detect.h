@@ -24,10 +24,7 @@ enum SEC_devices {
 	// Add other devices here as needed
 };
 
-static const char *const device_names[] = {
-	[SEC_TEMPLATE_DEVICE] = "Template Device Model Name",
-	// Add names for other devices here
-};
+extern const char *const device_names[];
 
 // Device feature helpers
 enum SEC_devices sec_get_current_device(void);

@@ -20,6 +20,10 @@
 #include <linux/sysfs.h>
 #endif
 
+const char *const device_names[] = {
+	[SEC_TEMPLATE_DEVICE] = "Template Device Model Name",
+};
+
 static int g_sec_current_device = DEVICE_UNKNOWN;
 static char g_sec_current_device_name[32] = "Unknown";
 static bool g_sec_template_feature = false;
