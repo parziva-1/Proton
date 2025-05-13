@@ -102,8 +102,8 @@ CLANG_TYPE=aosp
 
 ## Info message
 LINKER=ld.lld
-DEVICE="Galaxy S21 FE"
-CODENAME="r9s"
+DEVICE="Galaxy S21 Series"
+CODENAME="exynos2100"
 
 ## Parse arguments
 DO_KSU=0
