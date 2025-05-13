@@ -20,7 +20,7 @@ static const char *sec_detect_label = "sec_detect: ";
 
 enum SEC_devices {
 	DEVICE_UNKNOWN = -1,
-	SEC_TEMPLATE_DEVICE,
+	SEC_R9S,
 	// Add other devices here as needed
 };
 

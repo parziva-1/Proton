@@ -21,7 +21,7 @@
 #endif
 
 const char *const device_names[] = {
-	[SEC_TEMPLATE_DEVICE] = "Template Device Model Name",
+	[SEC_R9S] = "Galaxy S21 FE",
 };
 
 static int g_sec_current_device = DEVICE_UNKNOWN;
@@ -83,7 +83,7 @@ static struct kobject *device_kobj;
 
 static inline void setup_camera_params(void) {
 	switch (g_sec_current_device) {
-	case SEC_TEMPLATE_DEVICE:
+	case SEC_R9S:
 		mcd_template_camera_feature = true;
 		break;
 	default:
@@ -126,9 +126,9 @@ static int __init sec_detect_init(void) {
 		goto exit_put_root;
 	}
 
-	if (strstr(machine_name, "TEMPLATE_DEVICE_MODEL_STRING") != NULL) {
-		g_sec_current_device = SEC_TEMPLATE_DEVICE;
-		strscpy(g_sec_current_device_name, "template_device_name", sizeof(g_sec_current_device_name));
+	if (strstr(machine_name, "R9S") != NULL) {
+		g_sec_current_device = SEC_R9S;
+		strscpy(g_sec_current_device_name, "r9s", sizeof(g_sec_current_device_name));
 		g_sec_template_feature = true;
 	}
 
