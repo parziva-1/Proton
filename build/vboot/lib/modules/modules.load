@@ -217,6 +217,7 @@ dropdump.ko
 common_muic.ko
 flicker_test.ko
 stk.ko
+tsl2510.ko
 sec_tsp_log.ko
 sec_tclm_v2.ko
 sec_secure_touch.ko
