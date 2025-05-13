@@ -282,5 +282,6 @@ source "drivers/kernelsu/kernel/Kconfig"
 
 # o1s
 source "drivers/battery/charger/pca9468_charger/Kconfig" # ADDED BY LEGO AUTOMATICALLY: DO NOT SUBMIT
+source "drivers/input/sec_input/slsi/Kconfig" # ADDED BY LEGO AUTOMATICALLY: DO NOT SUBMIT
 
 endmenu
