@@ -67,4 +67,4 @@ obj-y += tzdev/
 
 obj-$(CONFIG_SAMSUNG_TUI)	+= tui/
 
-
+obj-$(CONFIG_SEC_DETECT)	+= sec_detect.o
