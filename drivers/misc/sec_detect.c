@@ -22,6 +22,7 @@
 
 const char *const device_names[] = {
 	[SEC_R9S] = "Galaxy S21 FE",
+	[SEC_O1S] = "Galaxy S21",
 };
 
 static int g_sec_current_device = DEVICE_UNKNOWN;
@@ -86,6 +87,9 @@ static inline void setup_camera_params(void) {
 	case SEC_R9S:
 		mcd_template_camera_feature = true;
 		break;
+	case SEC_O1S:
+		mcd_template_camera_feature = true;
+		break;
 	default:
 		break;
 	}
@@ -129,6 +133,10 @@ static int __init sec_detect_init(void) {
 	if (strstr(machine_name, "R9S") != NULL) {
 		g_sec_current_device = SEC_R9S;
 		strscpy(g_sec_current_device_name, "r9s", sizeof(g_sec_current_device_name));
+		g_sec_template_feature = true;
+	} else if (strstr(machine_name, "O1S") != NULL) {
+		g_sec_current_device = SEC_O1S;
+		strscpy(g_sec_current_device_name, "o1s", sizeof(g_sec_current_device_name));
 		g_sec_template_feature = true;
 	}
 
