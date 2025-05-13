@@ -22,9 +22,11 @@ i2c-exynos5.ko
 acpm-mfd-bus.ko
 s2mps24_mfd.ko
 s2mps23_mfd.ko
+s2mpb02_mfd.ko
 pmic_class.ko
 s2mps23-regulator.ko
 s2mps24-regulator.ko
+s2mpb02-regulator.ko
 phy-exynos-usbdrd-super.ko
 sec_debug_mode.ko
 fingerprint.ko
@@ -156,6 +158,7 @@ is-cis-hi1336.ko
 is-cis-hi847.ko
 is-actuator-ak737x.ko
 is-flash-ktd2692.ko
+is-flash-s2mpb02.ko
 is-device-eeprom.ko
 is-device-otprom.ko
 mcfrc.ko
@@ -172,6 +175,7 @@ dw_mmc.ko
 dw_mmc-pltfm.ko
 dw_mmc-exynos.ko
 leds-ktd2692.ko
+leds-s2mpb02.ko
 fmp-core.ko
 ion_exynos_mod.ko
 switch_class.ko
