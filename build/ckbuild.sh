@@ -87,7 +87,7 @@ fi
 
 ## Customizable vars
 # Kernel version
-K_VER="v4.ඞ"
+K_VER="v4.0.1a"
 
 # Toggles
 USE_CCACHE=1
