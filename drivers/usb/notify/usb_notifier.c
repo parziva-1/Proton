@@ -390,8 +390,6 @@ static int ccic_usb_handle_notification(struct notifier_block *nb,
 	case USB_STATUS_NOTIFY_ATTACH_UFP:
 		pr_info("%s: Turn On Device(UFP)\n", __func__);
 		send_otg_notify(o_notify, NOTIFY_EVENT_VBUS, 1);
-		if (is_blocked(o_notify, NOTIFY_BLOCK_TYPE_CLIENT))
-			return -EPERM;
 		break;
 	case USB_STATUS_NOTIFY_DETACH:
 		if (pdata->is_host) {
