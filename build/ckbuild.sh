@@ -15,7 +15,7 @@ LZ_REPO="https://gitlab.com/Jprimero15/lolz_clang.git"
 # Other
 DEFAULT_DEFCONFIG="proton_exynos2100-r9sxxx_defconfig"
 KERNEL_URL="https://github.com/ProtonKernel/Proton"
-AK3_URL="https://github.com/Flopster101/AnyKernel3-A25"
+AK3_URL="https://github.com/ProtonKernel/AnyKernel3"
 AK3_TEST=0
 SECONDS=0 # builtin bash timer
 DATE="$(date '+%Y%m%d-%H%M')"
