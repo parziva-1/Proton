@@ -637,8 +637,14 @@ int sched_proc_update_handler(struct ctl_table *table, int write,
 		void __user *buffer, size_t *lenp,
 		loff_t *ppos)
 {
-	int ret = proc_dointvec_minmax(table, write, buffer, lenp, ppos);
-	unsigned int factor = get_update_sysctl_factor();
+	int ret;
+	unsigned int factor;
+
+	if (write && task_is_booster(current))
+		return -EPERM;
+
+	ret = proc_dointvec_minmax(table, write, buffer, lenp, ppos);
+	factor = get_update_sysctl_factor();
 
 	if (ret || !write)
 		return ret;
