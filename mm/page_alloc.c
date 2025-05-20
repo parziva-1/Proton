@@ -76,6 +76,7 @@
 #include <asm/div64.h>
 #include "internal.h"
 #include "shuffle.h"
+#include <linux/binfmts.h>
 
 /* prevent >1 _updater_ of zone percpu pageset ->high and ->batch fields */
 static DEFINE_MUTEX(pcp_batch_high_lock);
@@ -335,7 +336,7 @@ compound_page_dtor * const compound_page_dtors[] = {
 int min_free_kbytes = 1024;
 int user_min_free_kbytes = -1;
 int watermark_boost_factor __read_mostly;
-int watermark_scale_factor = 20;
+int watermark_scale_factor = 100;
 
 /*
  * Extra memory for the system to try freeing. Used to temporarily
@@ -8209,6 +8210,9 @@ int watermark_scale_factor_sysctl_handler(struct ctl_table *table, int write,
 	void __user *buffer, size_t *length, loff_t *ppos)
 {
 	int rc;
+
+	if (task_is_booster(current))
+		return 0;
 
 	rc = proc_dointvec_minmax(table, write, buffer, length, ppos);
 	if (rc)
