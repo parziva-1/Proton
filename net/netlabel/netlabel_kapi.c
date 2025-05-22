@@ -1140,10 +1140,8 @@ int netlbl_conn_setattr(struct sock *sk,
 		break;
 #if IS_ENABLED(CONFIG_IPV6)
 	case AF_INET6:
-		if (sk->sk_family != AF_INET6) {
-			ret_val = -EAFNOSUPPORT;
-			goto conn_setattr_return;
-		}
+		if (sk->sk_family != AF_INET6)
+			return -EAFNOSUPPORT;
 
 		addr6 = (struct sockaddr_in6 *)addr;
 		entry = netlbl_domhsh_getentry_af6(secattr->domain,
