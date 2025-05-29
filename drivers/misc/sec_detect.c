@@ -69,6 +69,8 @@ static bool mcd_template_camera_feature = false;
 static bool mcd_type_rsu = false;
 static bool mcd_type_usu = false;
 static bool mcd_type_usuv3 = false;
+static bool mcd_type_usuv1 = false;
+static bool mcd_type_usuv2 = false;
 
 // Helper functions for each mcd_ variable
 bool sec_has_mcd_template_camera_feature(void) { return mcd_template_camera_feature; }
@@ -82,6 +84,12 @@ EXPORT_SYMBOL_GPL(sec_has_mcd_type_usu);
 
 bool sec_has_mcd_type_usuv3(void) { return mcd_type_usuv3; }
 EXPORT_SYMBOL_GPL(sec_has_mcd_type_usuv3);
+
+bool sec_has_mcd_type_usuv1(void) { return mcd_type_usuv1; }
+EXPORT_SYMBOL_GPL(sec_has_mcd_type_usuv1);
+
+bool sec_has_mcd_type_usuv2(void) { return mcd_type_usuv2; }
+EXPORT_SYMBOL_GPL(sec_has_mcd_type_usuv2);
 
 static bool g_detection_complete = false;
 
