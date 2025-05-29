@@ -40,6 +40,9 @@ bool sec_feat_uses_ssp_r9s(void);
 
 // Camera param helpers
 bool sec_has_mcd_template_camera_feature(void);
+bool sec_has_mcd_type_rsu(void);
+bool sec_has_mcd_type_usu(void);
+bool sec_has_mcd_type_usuv3(void);
 
 bool sec_is_detection_complete(void);
 
