@@ -1422,37 +1422,39 @@ static int is_sensor_notify_by_dma_end(struct is_device_sensor *device, void *ar
 	if (frame) {
 		switch (notification) {
 #ifdef USE_CAMERA_EMBEDDED_HEADER
-		case CSIS_NOTIFY_DMA_END_VC_EMBEDDED:
-			hashkey = frame->fcount % IS_TIMESTAMP_HASH_KEY;
+		if (sec_has_mcd_type_usuv3()) {
+			case CSIS_NOTIFY_DMA_END_VC_EMBEDDED:
+				hashkey = frame->fcount % IS_TIMESTAMP_HASH_KEY;
 
-			ret = is_sensor_g_module(device, &module);
-			if (ret) {
-				mwarn("%s sensor_g_module failed(%d)", device, __func__, ret);
-				return -EINVAL;
-			}
+				ret = is_sensor_g_module(device, &module);
+				if (ret) {
+					mwarn("%s sensor_g_module failed(%d)", device, __func__, ret);
+					return -EINVAL;
+				}
 
-			sensor_peri = (struct is_device_sensor_peri *)module->private_data;
-			if (sensor_peri == NULL) {
-				mwarn("sensor_peri is null", device);
-				return -EINVAL;
-			};
+				sensor_peri = (struct is_device_sensor_peri *)module->private_data;
+				if (sensor_peri == NULL) {
+					mwarn("sensor_peri is null", device);
+					return -EINVAL;
+				};
 
-			csi = v4l2_get_subdevdata(device->subdev_csi);
-			if (!csi) {
-				mwarn("CSI is NULL", device);
-				return -EINVAL;
-			}
+				csi = v4l2_get_subdevdata(device->subdev_csi);
+				if (!csi) {
+					mwarn("CSI is NULL", device);
+					return -EINVAL;
+				}
 
-			if (sensor_peri->subdev_cis && !csi->f_id_dec) {
-				cis = (struct is_cis *)v4l2_get_subdevdata(sensor_peri->subdev_cis);
+				if (sensor_peri->subdev_cis && !csi->f_id_dec) {
+					cis = (struct is_cis *)v4l2_get_subdevdata(sensor_peri->subdev_cis);
 
-				CALL_CISOPS(cis, cis_get_frame_id, sensor_peri->subdev_cis,
-						(u8 *)frame->kvaddr_buffer[0], &frame_id);
+					CALL_CISOPS(cis, cis_get_frame_id, sensor_peri->subdev_cis,
+							(u8 *)frame->kvaddr_buffer[0], &frame_id);
 
-				device->frame_id[hashkey] = frame_id;
-			}
+					device->frame_id[hashkey] = frame_id;
+				}
 
-			break;
+				break;
+		}
 #endif
 		case CSIS_NOTIFY_DMA_END_VC_MIPISTAT:
 			break;
