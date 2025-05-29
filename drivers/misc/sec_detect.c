@@ -66,10 +66,22 @@ EXPORT_SYMBOL_GPL(sec_feat_uses_ssp_r9s);
 
 // Camera params
 static bool mcd_template_camera_feature = false;
+static bool mcd_type_rsu = false;
+static bool mcd_type_usu = false;
+static bool mcd_type_usuv3 = false;
 
 // Helper functions for each mcd_ variable
 bool sec_has_mcd_template_camera_feature(void) { return mcd_template_camera_feature; }
 EXPORT_SYMBOL_GPL(sec_has_mcd_template_camera_feature);
+
+bool sec_has_mcd_type_rsu(void) { return mcd_type_rsu; }
+EXPORT_SYMBOL_GPL(sec_has_mcd_type_rsu);
+
+bool sec_has_mcd_type_usu(void) { return mcd_type_usu; }
+EXPORT_SYMBOL_GPL(sec_has_mcd_type_usu);
+
+bool sec_has_mcd_type_usuv3(void) { return mcd_type_usuv3; }
+EXPORT_SYMBOL_GPL(sec_has_mcd_type_usuv3);
 
 static bool g_detection_complete = false;
 
@@ -114,9 +126,11 @@ static inline void setup_camera_params(void) {
 	switch (g_sec_current_device) {
 	case SEC_R9S:
 		mcd_template_camera_feature = true;
+		mcd_type_rsu = true;
 		break;
 	case SEC_O1S:
 		mcd_template_camera_feature = true;
+		mcd_type_usu = true;
 		break;
 	default:
 		break;
