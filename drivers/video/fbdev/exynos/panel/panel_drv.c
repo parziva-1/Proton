@@ -3413,9 +3413,11 @@ static long panel_core_ioctl(struct v4l2_subdev *sd, unsigned int cmd, void *arg
 		break;
 
 #ifdef CONFIG_SUPPORT_MASK_LAYER
-	case PANEL_IOC_SET_MASK_LAYER:
-		ret = panel_set_mask_layer(panel, arg);
-		break;
+	if (sec_feat_support_mask_layer()) {
+		case PANEL_IOC_SET_MASK_LAYER:
+			ret = panel_set_mask_layer(panel, arg);
+			break;
+	}
 #endif
 
 #ifdef CONFIG_DYNAMIC_MIPI
