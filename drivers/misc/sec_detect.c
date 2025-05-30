@@ -142,6 +142,15 @@ static inline void setup_camera_params(void) {
 		mcd_template_camera_feature = true;
 		mcd_type_usu = true;
 		break;
+	case SEC_P3S:
+		mcd_template_camera_feature = true;
+		mcd_type_usuv3 = true;
+		mcd_type_usu = true;
+		break;
+	case SEC_T2S:
+		mcd_template_camera_feature = true;
+		mcd_type_usu = true;
+		break;
 	default:
 		break;
 	}
@@ -200,6 +209,9 @@ static int __init sec_detect_init(void) {
 	} else if (strstr(machine_name, "P3S") != NULL) {
 		g_sec_current_device = SEC_P3S;
 		strscpy(g_sec_current_device_name, "p3s", sizeof(g_sec_current_device_name));
+		g_sec_uses_s2mpb02 = true;
+		g_sec_support_hmd = true;
+		g_sec_uses_ssp_unbound = true;
 	} else if (strstr(machine_name, "T2S") != NULL) {
 		g_sec_current_device = SEC_T2S;
 		strscpy(g_sec_current_device_name, "t2s", sizeof(g_sec_current_device_name));
