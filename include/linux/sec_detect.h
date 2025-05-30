@@ -34,6 +34,7 @@ bool sec_feat_uses_s2mpb02(void);
 bool sec_feat_uses_ktd2692(void);
 bool sec_feat_support_mask_layer(void);
 bool sec_feat_support_tig(void);
+bool sec_feat_support_hmd(void);
 
 // Camera param helpers
 bool sec_has_mcd_template_camera_feature(void);
