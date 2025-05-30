@@ -258,6 +258,7 @@ sec_direct_charger.ko
 sec_pd.ko
 sec-battery.ko
 isg5320a.ko
+sx9360.ko
 mcps.ko
 exynos-bts.ko
 exynos-btsops2100.ko
