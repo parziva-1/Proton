@@ -110,7 +110,8 @@ ufs-exynos-core.ko
 scsi_srpmb.ko
 spidev.ko
 spi-s3c64xx.ko
-dhd.ko
+dhd_bcm4375.ko
+dhd_bcm4389.ko
 rtl8150.ko
 cdc_eem.ko
 smsc75xx.ko
