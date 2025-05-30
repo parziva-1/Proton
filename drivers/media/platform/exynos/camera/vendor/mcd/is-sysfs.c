@@ -5066,9 +5066,11 @@ int is_create_sysfs(struct is_core *core)
 		}
 #ifndef CAMERA_FRONT_FIXED_FOCUS
 #ifdef CAMERA_FRONT_PAFCAL
-		if (device_create_file(camera_front_dev, &dev_attr_front_paf_cal_check) < 0) {
-			pr_err("failed to create front device file, %s\n",
-					dev_attr_front_paf_cal_check.attr.name);
+		if (sec_has_mcd_type_usu()) {
+			if (device_create_file(camera_front_dev, &dev_attr_front_paf_cal_check) < 0) {
+				pr_err("failed to create front device file, %s\n",
+						dev_attr_front_paf_cal_check.attr.name);
+			}
 		}
 #endif
 		if (device_create_file(camera_front_dev, &dev_attr_front_afcal) < 0) {
@@ -5809,7 +5811,8 @@ int is_destroy_sysfs(struct is_core *core)
 #ifndef CAMERA_FRONT_FIXED_FOCUS
 		device_remove_file(camera_front_dev, &dev_attr_front_afcal);
 #ifdef CAMERA_FRONT_PAFCAL
-		device_remove_file(camera_front_dev, &dev_attr_front_paf_cal_check);
+		if (sec_has_mcd_type_usu())
+			device_remove_file(camera_front_dev, &dev_attr_front_paf_cal_check);
 #endif
 #endif
 		device_remove_file(camera_front_dev, &dev_attr_front_camfw_full);
