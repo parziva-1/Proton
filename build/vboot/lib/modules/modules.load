@@ -27,6 +27,7 @@ pmic_class.ko
 s2mps23-regulator.ko
 s2mps24-regulator.ko
 s2mpb02-regulator.ko
+s2dos05-regulator.ko
 phy-exynos-usbdrd-super.ko
 sec_debug_mode.ko
 fingerprint.ko
