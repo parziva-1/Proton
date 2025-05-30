@@ -156,3 +156,4 @@ x509.genkey
 log.txt
 *.pyc
 build/mkbootimg/gki/__pycache__/*.pyc
+modules_out/
