@@ -291,10 +291,14 @@ static int getidx_acl_dim_onoff_table(struct maptbl *tbl)
 	panel_bl = &panel->panel_bl;
 
 #ifdef CONFIG_SUPPORT_MASK_LAYER
-	return maptbl_index(tbl, 0,
-			 panel_bl->props.mask_layer_br_hook == MASK_LAYER_HOOK_ON ? false : true , 0);
+    if (sec_feat_support_mask_layer()) {
+        return maptbl_index(tbl, 0,
+                panel_bl->props.mask_layer_br_hook == MASK_LAYER_HOOK_ON ? false : true , 0);
+    } else {
+        return maptbl_index(tbl, 0, true, 0);
+    }
 #else
-	return maptbl_index(tbl, 0, true : 0 , 0);
+    return maptbl_index(tbl, 0, true, 0);
 #endif
 }
 
