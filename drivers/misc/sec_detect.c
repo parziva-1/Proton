@@ -156,6 +156,13 @@ static inline void setup_camera_params(void) {
 static inline void print_sec_variables(const char *machine_name) {
 	SEC_DETECT_LOG("Current machine name: %s\n", machine_name);
 	// SEC_DETECT_LOG("g_sec_template_feature = %s\n", g_sec_template_feature ? "true" : "false");
+	SEC_DETECT_LOG("g_sec_uses_s2mpb02 = %s\n", g_sec_uses_s2mpb02 ? "true" : "false");
+	SEC_DETECT_LOG("g_sec_uses_ktd2692 = %s\n", g_sec_uses_ktd2692 ? "true" : "false");
+	SEC_DETECT_LOG("g_sec_support_mask_layer = %s\n", g_sec_support_mask_layer ? "true" : "false");
+	SEC_DETECT_LOG("g_sec_support_tig = %s\n", g_sec_support_tig ? "true" : "false");
+	SEC_DETECT_LOG("g_sec_support_hmd = %s\n", g_sec_support_hmd ? "true" : "false");
+	SEC_DETECT_LOG("g_sec_uses_ssp_unbound = %s\n", g_sec_uses_ssp_unbound ? "true" : "false");
+	SEC_DETECT_LOG("g_sec_uses_ssp_r9s = %s\n", g_sec_uses_ssp_r9s ? "true" : "false");
 }
 
 static int __init sec_detect_init(void) {
