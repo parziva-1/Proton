@@ -247,6 +247,7 @@ abc_hub.ko
 mfd_max77705.ko
 max77705-fuelgauge.ko
 max77705_vibrator.ko
+cs40l2x_vib.ko
 broadcom-sensorhub.ko
 sensors_core.ko
 snvm.ko
