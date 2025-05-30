@@ -155,9 +155,12 @@ votf.ko
 camerapp-pd-mgr.ko
 fimc-is.ko
 is-cis-3j1.ko
+is-cis-gh1.ko
 is-cis-gw2.ko
 is-cis-imx563.ko
 is-cis-2ld.ko
+is-cis-hm1.ko
+is-cis-hm3.ko
 is-cis-imx258.ko
 is-cis-imx616.ko
 is-cis-hi1336.ko
