@@ -2811,6 +2811,9 @@ static void decon_update_regs(struct decon_device *decon,
 #if defined(CONFIG_EXYNOS_SUPPORT_READBACK)
 	int err_rb = 0;
 #endif
+#if defined(CONFIG_SUPPORT_HMD)
+	int video_emul_en = 0;
+#endif
 #if IS_ENABLED(CONFIG_EXYNOS_MIGOV)
 	u32 prev_fps, wait_fence = false;
 #endif
@@ -2820,16 +2823,16 @@ static void decon_update_regs(struct decon_device *decon,
 	ktime_t	fence_time;
 #endif
 #if defined(CONFIG_SUPPORT_HMD)
-	int video_emul_en = 0;
+	if (sec_feat_support_hmd()) {
+		if (decon->dt.out_type != DECON_OUT_DSI)
+			goto video_emul_check_done;
 
-	if (decon->dt.out_type != DECON_OUT_DSI)
-		goto video_emul_check_done;
+		if (decon->panel_state == NULL)
+			goto video_emul_check_done;
 
-	if (decon->panel_state == NULL)
-		goto video_emul_check_done;
-
-	if (decon->panel_state->hmd_on)
-		video_emul_en = 1;
+		if (decon->panel_state->hmd_on)
+			video_emul_en = 1;
+	}
 video_emul_check_done:
 #endif
 
@@ -2952,7 +2955,7 @@ video_emul_check_done:
 	DPU_EVENT_LOG_WINCON(&decon->sd, regs);
 
 #ifdef CONFIG_SUPPORT_HMD
-	if ((regs->num_of_window) || (video_emul_en)) {
+	if ((regs->num_of_window) || (sec_feat_support_hmd() && video_emul_en)) {
 #else
 	if (regs->num_of_window) {
 #endif
@@ -3072,8 +3075,10 @@ video_emul_check_done:
 			}
 		}
 #ifdef CONFIG_SUPPORT_HMD
-		if (video_emul_en)
-			goto end;
+		if (sec_feat_support_hmd()) {
+			if (video_emul_en)
+				goto end;
+		}
 #endif
 		if (!decon->low_persistence) {
 			decon_reg_set_trigger(decon->id, &psr, DECON_TRIG_DISABLE);
