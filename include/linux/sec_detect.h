@@ -32,6 +32,7 @@ enum SEC_devices sec_get_current_device(void);
 bool sec_feat_template_feature(void);
 bool sec_feat_uses_s2mpb02(void);
 bool sec_feat_uses_ktd2692(void);
+bool sec_feat_support_mask_layer(void);
 
 // Camera param helpers
 bool sec_has_mcd_template_camera_feature(void);
