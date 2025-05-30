@@ -22,6 +22,8 @@ enum SEC_devices {
 	DEVICE_UNKNOWN = -1,
 	SEC_R9S,
 	SEC_O1S,
+	SEC_P3S,
+	SEC_T2S,
 	// Add other devices here as needed
 };
 
