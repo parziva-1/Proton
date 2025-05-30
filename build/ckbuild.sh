@@ -310,6 +310,7 @@ build() {
 
     # Delete leftovers
     rm -f $OUT_KERNEL
+    rm -rf "$MOD_OUTDIR"
 
     make -j$(nproc --all) O=out CC="clang" CROSS_COMPILE="$CCARM64_PREFIX" $DEFCONFIG $([[ "$DO_KSU" == "1" ]] && echo "ksu.config") 2>&1 | tee log.txt
 
