@@ -1991,8 +1991,10 @@ crc_retry:
 	is_sec_check_module_state(finfo);
 
 #ifdef USE_CAMERA_NOTIFY_WACOM
-	if (!test_bit(IS_CRC_ERROR_HEADER, &finfo->crc_error))
-		is_eeprom_info_update(rom_id, finfo->header_ver);
+	if (sec_has_mcd_type_usuv3()) {
+		if (!test_bit(IS_CRC_ERROR_HEADER, &finfo->crc_error))
+			is_eeprom_info_update(rom_id, finfo->header_ver);
+	}
 #endif
 
 #ifdef CONFIG_SEC_CAL_ENABLE
@@ -2182,8 +2184,10 @@ crc_retry:
 	is_sec_check_module_state(finfo);
 
 #ifdef USE_CAMERA_NOTIFY_WACOM
-	if (!test_bit(IS_CRC_ERROR_HEADER, &finfo->crc_error))
-		is_eeprom_info_update(rom_id, finfo->header_ver);
+	if (sec_has_mcd_type_usuv3()) {
+		if (!test_bit(IS_CRC_ERROR_HEADER, &finfo->crc_error))
+			is_eeprom_info_update(rom_id, finfo->header_ver);
+	}
 #endif
 
 #ifdef CONFIG_SEC_CAL_ENABLE
