@@ -45,6 +45,7 @@ pcie-exynos2100-rc-cal.ko
 fb.ko
 mcd-panel-s6e3fab.ko
 mcd-panel-s6e3hab.ko
+mcd-panel-s6e3had.ko
 mcd-panel-ea8082.ko
 mcd-panel-s6e3fc3.ko
 mcd-panel.ko
