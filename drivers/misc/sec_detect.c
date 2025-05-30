@@ -23,6 +23,8 @@
 const char *const device_names[] = {
 	[SEC_R9S] = "Galaxy S21 FE",
 	[SEC_O1S] = "Galaxy S21",
+	[SEC_P3S] = "Galaxy S21 Ultra",
+	[SEC_T2S] = "Galaxy S21+",
 };
 
 static int g_sec_current_device = DEVICE_UNKNOWN;
@@ -195,6 +197,12 @@ static int __init sec_detect_init(void) {
 		g_sec_uses_s2mpb02 = true;
 		g_sec_support_hmd = true;
 		g_sec_uses_ssp_unbound = true;
+	} else if (strstr(machine_name, "P3S") != NULL) {
+		g_sec_current_device = SEC_P3S;
+		strscpy(g_sec_current_device_name, "p3s", sizeof(g_sec_current_device_name));
+	} else if (strstr(machine_name, "T2S") != NULL) {
+		g_sec_current_device = SEC_T2S;
+		strscpy(g_sec_current_device_name, "t2s", sizeof(g_sec_current_device_name));
 	}
 
 	// Print machine name and sec_ variables
