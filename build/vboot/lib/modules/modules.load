@@ -243,6 +243,7 @@ pdic_notifier_module.ko
 sm5451-charger.ko
 hall_ic.ko
 hall_ic_notifier.ko
+uwb.ko
 pwm-config.ko
 abc.ko
 abc_hub.ko
