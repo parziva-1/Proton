@@ -135,20 +135,16 @@ static struct kobject *device_kobj;
 static inline void setup_camera_params(void) {
 	switch (g_sec_current_device) {
 	case SEC_R9S:
-		mcd_template_camera_feature = true;
 		mcd_type_rsu = true;
 		break;
 	case SEC_O1S:
-		mcd_template_camera_feature = true;
 		mcd_type_usu = true;
 		break;
 	case SEC_P3S:
-		mcd_template_camera_feature = true;
 		mcd_type_usuv3 = true;
 		mcd_type_usu = true;
 		break;
 	case SEC_T2S:
-		mcd_template_camera_feature = true;
 		mcd_type_usu = true;
 		break;
 	default:
@@ -159,7 +155,7 @@ static inline void setup_camera_params(void) {
 // New function to print machine name and sec_ variables
 static inline void print_sec_variables(const char *machine_name) {
 	SEC_DETECT_LOG("Current machine name: %s\n", machine_name);
-	SEC_DETECT_LOG("g_sec_template_feature = %s\n", g_sec_template_feature ? "true" : "false");
+	// SEC_DETECT_LOG("g_sec_template_feature = %s\n", g_sec_template_feature ? "true" : "false");
 }
 
 static int __init sec_detect_init(void) {
@@ -194,7 +190,6 @@ static int __init sec_detect_init(void) {
 	if (strstr(machine_name, "R9S") != NULL) {
 		g_sec_current_device = SEC_R9S;
 		strscpy(g_sec_current_device_name, "r9s", sizeof(g_sec_current_device_name));
-		g_sec_template_feature = true;
 		g_sec_uses_ktd2692 = true;
 		g_sec_support_mask_layer = true;
 		g_sec_support_tig = true;
@@ -202,7 +197,6 @@ static int __init sec_detect_init(void) {
 	} else if (strstr(machine_name, "O1S") != NULL) {
 		g_sec_current_device = SEC_O1S;
 		strscpy(g_sec_current_device_name, "o1s", sizeof(g_sec_current_device_name));
-		g_sec_template_feature = true;
 		g_sec_uses_s2mpb02 = true;
 		g_sec_support_hmd = true;
 		g_sec_uses_ssp_unbound = true;
