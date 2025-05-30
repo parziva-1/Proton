@@ -165,6 +165,7 @@ is-cis-hi847.ko
 is-actuator-ak737x.ko
 is-flash-ktd2692.ko
 is-flash-s2mpb02.ko
+is-laser-af-vl53l5.ko
 is-device-eeprom.ko
 is-device-otprom.ko
 mcfrc.ko
@@ -261,6 +262,7 @@ sec_pd.ko
 sec-battery.ko
 isg5320a.ko
 sx9360.ko
+vl53l5.ko
 mcps.ko
 exynos-bts.ko
 exynos-btsops2100.ko
