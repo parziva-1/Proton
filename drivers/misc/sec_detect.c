@@ -32,6 +32,7 @@ static bool g_sec_uses_s2mpb02 = false;
 static bool g_sec_uses_ktd2692 = false;
 static bool g_sec_support_mask_layer = false;
 static bool g_sec_support_tig = false;
+static bool g_sec_support_hmd = false;
 
 // Helper functions for each g_sec_ variable
 enum SEC_devices sec_get_current_device(void) { return g_sec_current_device; }
@@ -51,6 +52,9 @@ EXPORT_SYMBOL_GPL(sec_feat_support_mask_layer);
 
 bool sec_feat_support_tig(void) { return g_sec_support_tig; }
 EXPORT_SYMBOL_GPL(sec_feat_support_tig);
+
+bool sec_feat_support_hmd(void) { return g_sec_support_hmd; }
+EXPORT_SYMBOL_GPL(sec_feat_support_hmd);
 
 // Camera params
 static bool mcd_template_camera_feature = false;
@@ -158,6 +162,7 @@ static int __init sec_detect_init(void) {
 		strscpy(g_sec_current_device_name, "o1s", sizeof(g_sec_current_device_name));
 		g_sec_template_feature = true;
 		g_sec_uses_s2mpb02 = true;
+		g_sec_support_hmd = true;
 	}
 
 	// Print machine name and sec_ variables
