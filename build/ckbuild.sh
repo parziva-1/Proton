@@ -445,6 +445,25 @@ post_build() {
         exit 1
     fi
 
+    # Check for duplicate modules in modules.load
+	if [ -f "$IN_VBOOT/lib/modules/modules.load" ]; then
+		dupes=$(sort "$IN_VBOOT/lib/modules/modules.load" | uniq -d | xargs)
+		if [ -n "$dupes" ]; then
+			echo -e "\nERROR: Duplicate module entries found in modules.load: $dupes\n"
+			exit 1
+		fi
+	fi
+
+	# Warn for modules present but not in modules.load
+	if [ -d "$MOD_OUTDIR/lib/modules" ] && [ -f "$IN_VBOOT/lib/modules/modules.load" ]; then
+		all_built=$(find "$MOD_OUTDIR/lib/modules" -type f -name "*.ko" -exec basename {} \; | sort)
+		all_load=$(sort "$IN_VBOOT/lib/modules/modules.load")
+		not_in_load=$(comm -23 <(echo "$all_built") <(echo "$all_load") | xargs)
+		if [ -n "$not_in_load" ]; then
+			echo -e "\nWARNING: The following modules exist but are NOT in modules.load: $not_in_load\n"
+		fi
+	fi
+
     # Prepare ramdisk
     depmod 0.0 -b "$RAMDISK_DIR"
     sed -i 's/\([^ ]\+\)/\/lib\/modules\/\1/g' "$MODULES_DIR/0.0/modules.dep"
