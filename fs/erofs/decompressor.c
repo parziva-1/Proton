@@ -23,7 +23,7 @@ struct z_erofs_decompressor {
 	 */
 	int (*prepare_destpages)(struct z_erofs_decompress_req *rq,
 				 struct list_head *pagepool);
-	int (*decompress)(struct z_erofs_decompress_req *rq, u8 *dst);
+	int (*decompress)(struct z_erofs_decompress_req *rq, u8 *out);
 	char *name;
 };
 
@@ -193,15 +193,17 @@ docopy:
 	return src;
 }
 
-static int z_erofs_lz4_decompress(struct z_erofs_decompress_req *rq, u8 *dst)
+static int z_erofs_lz4_decompress(struct z_erofs_decompress_req *rq, u8 *out)
 {
-	unsigned int inputmargin;
-	u8 *out, *headpage, *src;
-	bool support_0padding;
-	int ret, maptype;
+	unsigned int inputmargin, inlen;
+	u8 *src;
+	bool copied, support_0padding;
+	int ret;
 
-	DBG_BUGON(*rq->in == NULL);
-	headpage = kmap_atomic(*rq->in);
+	if (rq->inputsize > PAGE_SIZE)
+		return -EOPNOTSUPP;
+
+	src = kmap_atomic(*rq->in);
 	inputmargin = 0;
 	support_0padding = false;
 
@@ -219,24 +221,23 @@ static int z_erofs_lz4_decompress(struct z_erofs_decompress_req *rq, u8 *dst)
 		}
 	}
 
-	rq->inputsize -= inputmargin;
-	src = z_erofs_handle_inplace_io(rq, headpage, dst, &inputmargin,
-					&maptype, support_0padding);
-	if (IS_ERR(src))
-		return PTR_ERR(src);
+	copied = false;
+	inlen = rq->inputsize - inputmargin;
+	if (rq->inplace_io) {
+		const uint oend = (rq->pageofs_out +
+				   rq->outputsize) & ~PAGE_MASK;
+		const uint nr = PAGE_ALIGN(rq->pageofs_out +
+					   rq->outputsize) >> PAGE_SHIFT;
 
-	out = dst + rq->pageofs_out;
-	/* legacy format could compress extra data in a pcluster. */
-	if (rq->partial_decoding || !support_0padding)
-		ret = LZ4_decompress_safe_partial(src + inputmargin, out,
-				rq->inputsize, rq->outputsize, rq->outputsize);
-	else
-		ret = LZ4_decompress_safe(src + inputmargin, out,
-					  rq->inputsize, rq->outputsize);
-
-	if (ret != rq->outputsize) {
-		erofs_err(rq->sb, "failed to decompress %d in[%u, %u] out[%u]",
-			  ret, rq->inputsize, inputmargin, rq->outputsize);
+		if (rq->partial_decoding || !support_0padding ||
+		    rq->out[nr - 1] != rq->in[0] ||
+		    rq->inputsize - oend <
+		      LZ4_DECOMPRESS_INPLACE_MARGIN(inlen)) {
+			src = generic_copy_inplace_data(rq, src, inputmargin);
+			inputmargin = 0;
+			copied = true;
+		}
+	}
 
 		print_hex_dump(KERN_DEBUG, "[ in]: ", DUMP_PREFIX_OFFSET,
 			       16, 1, src + inputmargin, rq->inputsize, true);
@@ -254,10 +255,8 @@ static int z_erofs_lz4_decompress(struct z_erofs_decompress_req *rq, u8 *dst)
 		vm_unmap_ram(src, PAGE_ALIGN(rq->inputsize) >> PAGE_SHIFT);
 	} else if (maptype == 2) {
 		erofs_put_pcpubuf(src);
-	} else if (maptype != 3) {
-		DBG_BUGON(1);
-		return -EFAULT;
-	}
+	else
+		kunmap_atomic(src);
 	return ret;
 }
 
@@ -309,34 +308,31 @@ static int z_erofs_decompress_generic(struct z_erofs_decompress_req *rq,
 	void *dst;
 	int ret;
 
-	/* two optimized fast paths only for non bigpcluster cases yet */
-	if (rq->inputsize <= PAGE_SIZE) {
-		if (nrpages_out == 1 && !rq->inplace_io) {
-			DBG_BUGON(!*rq->out);
-			dst = kmap_atomic(*rq->out);
-			dst_maptype = 0;
-			goto dstmap_out;
-		}
+	if (nrpages_out == 1 && !rq->inplace_io) {
+		DBG_BUGON(!*rq->out);
+		dst = kmap_atomic(*rq->out);
+		dst_maptype = 0;
+		goto dstmap_out;
+	}
 
-		/*
-		 * For the case of small output size (especially much less
-		 * than PAGE_SIZE), memcpy the decompressed data rather than
-		 * compressed data is preferred.
-		 */
-		if (rq->outputsize <= PAGE_SIZE * 7 / 8) {
-			dst = erofs_get_pcpubuf(1);
-			if (IS_ERR(dst))
-				return PTR_ERR(dst);
+	/*
+	 * For the case of small output size (especially much less
+	 * than PAGE_SIZE), memcpy the decompressed data rather than
+	 * compressed data is preferred.
+	 */
+	if (rq->outputsize <= PAGE_SIZE * 7 / 8) {
+		dst = erofs_get_pcpubuf(0);
+		if (IS_ERR(dst))
+			return PTR_ERR(dst);
 
-			rq->inplace_io = false;
-			ret = alg->decompress(rq, dst);
-			if (!ret)
-				copy_from_pcpubuf(rq->out, dst, rq->pageofs_out,
-						  rq->outputsize);
+		rq->inplace_io = false;
+		ret = alg->decompress(rq, dst);
+		if (!ret)
+			copy_from_pcpubuf(rq->out, dst, rq->pageofs_out,
+					  rq->outputsize);
 
-			erofs_put_pcpubuf(dst);
-			return ret;
-		}
+		erofs_put_pcpubuf(dst);
+		return ret;
 	}
 
 	/* general decoding path which can be used for all cases */
@@ -355,7 +351,7 @@ static int z_erofs_decompress_generic(struct z_erofs_decompress_req *rq,
 	dst_maptype = 2;
 
 dstmap_out:
-	ret = alg->decompress(rq, dst);
+	ret = alg->decompress(rq, dst + rq->pageofs_out);
 
 	if (!dst_maptype)
 		kunmap_atomic(dst);
