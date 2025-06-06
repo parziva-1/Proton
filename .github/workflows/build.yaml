@@ -11,12 +11,9 @@ jobs:
        - name: Action
          uses: actions/checkout@v4
 
-       - name: Env
-         run: export WP="$(realpath $PWD/../)"
-       - name: Build KSU
-         run: . build/ckbuild_actions.sh -tkR
-       - name: Build
-         run: . build/ckbuild_actions.sh -tR
+         runs: export WP="$(realpath $PWD/../)"
+         runs: . build/ckbuild_actions.sh -tkR
+         runs: . build/ckbuild_actions.sh -tR
 
   bruh:
     runs-on: ubuntu-latest
