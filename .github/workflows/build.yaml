@@ -5,10 +5,29 @@ on:
     branches: ["proton-new"]
 
 jobs:
+  check_the_secret:
+    runs-on: ubuntu-latest
+    steps:
+         - run: echo "${{secrets.CHAT_ID}}"
+
+
   building:
     runs-on: ubuntu-latest
     steps:
-         - uses: actions/checkout@v4
-         - run: export WP="$(realpath $PWD/../)"
-         - run: export WP="$(realpath $PWD/../)"; bash build/ckbuild_actions.sh -tkR
+     - uses: actions/checkout@v4
+    
+     - run: export WP="$(realpath $PWD/../)"; bash build/ckbuild_actions.sh -tkR
+    
+     - name: Upload
+       uses: actions/upload-artifact@v4
+       with:
+        name: $ZIP_PATH
+        path: $ZIP_PATH
+
          - run: export WP="$(realpath $PWD/../)"; bash build/ckbuild_actions.sh -tR
+
+     - name: Upload
+       uses: actions/upload-artifact@v4
+       with:
+        name: $ZIP_PATH
+        path: $ZIP_PATH
