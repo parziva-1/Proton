@@ -298,6 +298,9 @@ prep_build() {
 }
 
 build() {
+    # Delete log.txt at the start
+    rm -f log.txt
+
     # Not that necessary anymore, but still export it just in case.
     export PLATFORM_VERSION=11
     export ANDROID_MAJOR_VERSION=r
@@ -315,7 +318,7 @@ build() {
     make -j$(nproc --all) O=out CC="clang" CROSS_COMPILE="$CCARM64_PREFIX" $DEFCONFIG $([[ "$DO_KSU" == "1" ]] && echo "ksu.config") 2>&1 | tee log.txt
 
     if [ $DO_MENUCONFIG = "1" ]; then
-        make O=out menuconfig
+        make O=out menuconfig 2>&1 >> log.txt
     fi
 
     if [[ "$DO_REGEN" = "1" ]]; then
@@ -338,13 +341,13 @@ build() {
     ## Start the build
     echo -e "\nINFO: Starting compilation...\n"
 
-    make -j$(nproc --all) O=out CC="clang" CROSS_COMPILE="$CCARM64_PREFIX" dtbs 2>&1 | tee log.txt
+    make -j$(nproc --all) O=out CC="clang" CROSS_COMPILE="$CCARM64_PREFIX" dtbs 2>&1 | tee -a log.txt
     if [ $USE_CCACHE = "1" ]; then
-        make -j$(nproc --all) O=out CC="ccache clang" CROSS_COMPILE="$CCARM64_PREFIX" 2>&1 | tee log.txt
+        make -j$(nproc --all) O=out CC="ccache clang" CROSS_COMPILE="$CCARM64_PREFIX" 2>&1 | tee -a log.txt
     else
-        make -j$(nproc --all) O=out CC="clang" CROSS_COMPILE="$CCARM64_PREFIX" 2>&1 | tee log.txt
+        make -j$(nproc --all) O=out CC="clang" CROSS_COMPILE="$CCARM64_PREFIX" 2>&1 | tee -a log.txt
     fi
-    make -j$(nproc --all) O=out CC="clang" CROSS_COMPILE="$CCARM64_PREFIX" INSTALL_MOD_STRIP="--strip-debug --keep-section=.ARM.attributes" INSTALL_MOD_PATH="$MOD_OUTDIR" modules_install 2>&1 | tee log.txt
+    make -j$(nproc --all) O=out CC="clang" CROSS_COMPILE="$CCARM64_PREFIX" INSTALL_MOD_STRIP="--strip-debug --keep-section=.ARM.attributes" INSTALL_MOD_PATH="$MOD_OUTDIR" modules_install 2>&1 | tee -a log.txt
 }
 
 packing() {
