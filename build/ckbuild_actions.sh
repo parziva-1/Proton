@@ -155,8 +155,8 @@ IDS="$WP/ids"
 if ! [ -d "$IDS" ]; then
     git clone -q https://github.com/ProtonKernel/ids $IDS
 fi
-echo "${{secrets.BOT_TOKEN}}" > bot_token
-echo "${{secrets.CHAT_ID}}" > chat_id
+echo "${{vars.BOT_TOKEN}}" > bot_token
+echo "${{vars.CHAT_ID}}" > chat_id
 TELEGRAM_CHAT_ID="$(cat chat_id)"
 TELEGRAM_BOT_TOKEN=$(cat bot_token)
 fi
