@@ -40,6 +40,8 @@ bool sec_feat_support_hmd(void);
 bool sec_feat_uses_ssp_unbound(void);
 bool sec_feat_uses_ssp_r9s(void);
 bool sec_feat_support_ddi_flash(void);
+bool sec_feat_support_gm2_flash(void);
+bool sec_feat_support_poc_spi(void);
 
 // Camera param helpers
 bool sec_has_mcd_template_camera_feature(void);
