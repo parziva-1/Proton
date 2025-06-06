@@ -10,7 +10,6 @@ jobs:
     steps:
        - name: Action
          uses: action/checkout@v4
-         uses
 
        - name: Build
          run: . build/setwp.sh
