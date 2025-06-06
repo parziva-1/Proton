@@ -9,7 +9,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
        - name: Action
-         uses: action/checkout@v4
+         uses: actions/checkout@v4
 
        - name: Env
          run: . build/setwp.sh
