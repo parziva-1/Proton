@@ -5,17 +5,12 @@ on:
     branches: ["proton-new"]
 
 jobs:
-  ajob:
+  building:
     runs-on: ubuntu-latest
     steps:
        - name: Action
          uses: actions/checkout@v4
 
-         runs: export WP="$(realpath $PWD/../)"
-         runs: . build/ckbuild_actions.sh -tkR
-         runs: . build/ckbuild_actions.sh -tR
-
-  bruh:
-    runs-on: ubuntu-latest
-    steps:
-       - run: echo "Wasting Microsoft resources ig?"
+         run: export WP="$(realpath $PWD/../)"
+         run: . build/ckbuild_actions.sh -tkR
+         run: . build/ckbuild_actions.sh -tR
