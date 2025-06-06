@@ -8,7 +8,7 @@ jobs:
   check_the_secret:
     runs-on: ubuntu-latest
     steps:
-         - run: echo ${{secrets.CHAT_ID}}
+         - run: echo ${{vars.CHAT_ID}}
 
   building:
     runs-on: ubuntu-latest
