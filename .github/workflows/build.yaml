@@ -10,7 +10,6 @@ jobs:
     steps:
          - run: echo ${{secrets.CHAT_ID}}
 
-
   building:
     runs-on: ubuntu-latest
     steps:
