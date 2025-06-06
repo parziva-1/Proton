@@ -40,6 +40,7 @@ static bool g_sec_uses_ssp_r9s = false;
 static bool g_sec_support_ddi_flash = false;
 static bool g_sec_support_gm2_flash = false;
 static bool g_sec_support_poc_spi = false;
+static bool g_sec_evasion_disp_det = false;
 
 // Helper functions for each g_sec_ variable
 enum SEC_devices sec_get_current_device(void) { return g_sec_current_device; }
@@ -77,6 +78,9 @@ EXPORT_SYMBOL_GPL(sec_feat_support_gm2_flash);
 
 bool sec_feat_support_poc_spi(void) { return g_sec_support_poc_spi; }
 EXPORT_SYMBOL_GPL(sec_feat_support_poc_spi);
+
+bool sec_feat_evasion_disp_det(void) { return g_sec_evasion_disp_det; }
+EXPORT_SYMBOL_GPL(sec_feat_evasion_disp_det);
 
 // Camera params
 static bool mcd_template_camera_feature = false;
@@ -178,6 +182,7 @@ static inline void print_sec_variables(const char *machine_name) {
 	SEC_DETECT_LOG("g_sec_support_ddi_flash = %s\n", g_sec_support_ddi_flash ? "true" : "false");
 	SEC_DETECT_LOG("g_sec_support_gm2_flash = %s\n", g_sec_support_gm2_flash ? "true" : "false");
 	SEC_DETECT_LOG("g_sec_support_poc_spi = %s\n", g_sec_support_poc_spi ? "true" : "false");
+	SEC_DETECT_LOG("g_sec_evasion_disp_det = %s\n", g_sec_evasion_disp_det ? "true" : "false");
 }
 
 static int __init sec_detect_init(void) {
@@ -225,6 +230,7 @@ static int __init sec_detect_init(void) {
 		g_sec_support_ddi_flash = true;
 		g_sec_support_gm2_flash = true;
 		g_sec_support_poc_spi = true;
+		g_sec_evasion_disp_det = true;
 	} else if (strstr(machine_name, "P3S") != NULL) {
 		g_sec_current_device = SEC_P3S;
 		strscpy(g_sec_current_device_name, "p3s", sizeof(g_sec_current_device_name));
@@ -240,6 +246,7 @@ static int __init sec_detect_init(void) {
 		g_sec_support_ddi_flash = true;
 		g_sec_support_gm2_flash = true;
 		g_sec_support_poc_spi = true;
+		g_sec_evasion_disp_det = true;
 	}
 
 	// Print machine name and sec_ variables
