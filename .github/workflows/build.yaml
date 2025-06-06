@@ -10,5 +10,5 @@ jobs:
     steps:
          - uses: actions/checkout@v4
          - run: export WP="$(realpath $PWD/../)"
-         - run: . build/ckbuild_actions.sh -tkR
-         - run: . build/ckbuild_actions.sh -tR
+         - run: export WP="$(realpath $PWD/../)"; bash build/ckbuild_actions.sh -tkR
+         - run: export WP="$(realpath $PWD/../)"; bash build/ckbuild_actions.sh -tR
