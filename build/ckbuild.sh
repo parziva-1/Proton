@@ -401,6 +401,8 @@ packing() {
 }
 
 post_build() {
+    local MONTH="$(date +%Y-%m)"
+
     ## Check if the kernel binaries were built.
     if [ -f "out/arch/arm64/boot/Image" ]; then
         echo -e "\nINFO: Kernel compiled succesfully!...\n"
@@ -488,9 +490,8 @@ post_build() {
         --kernel "$OUT_KERNEL" \
         --output "$OUT_BOOTIMG" \
         --ramdisk "$PREBUILT_RAMDISK" \
-        --pagesize 4096 \
         --os_version 11.0.0 \
-        --os_patch_level 2024-10 || exit 1
+        --os_patch_level "$MONTH" || exit 1
     echo -e "INFO: Done!"
 
     echo -e "\nINFO: Building vendor_boot image..."
@@ -500,18 +501,11 @@ post_build() {
 
     $MKBOOTIMG --header_version 3 \
         --vendor_boot "$OUT_VENDORBOOTIMG" \
-        --vendor_cmdline "androidboot.selinux=permissive loop.max_part=7" \
+        --vendor_cmdline "loop.max_part=7" \
         --dtb "$OUT_DTBIMAGE" \
         --vendor_ramdisk "$(pwd)/ramdisk.cpio.gz" \
         --os_version 11.0.0 \
-        --os_patch_level 2024-10 \
-        --board SRPUG16A011KU \
-        --dtb_offset 0x101f00000 \
-        --kernel_offset 0x00008000 \
-        --ramdisk_offset 0x01000000 \
-        --tags_offset 0x00000100 \
-        --base 0x10000000 \
-        --pagesize 2048 || exit 1glo
+        --os_patch_level "$MONTH" || exit 1
 
     cd "$KDIR"
 
