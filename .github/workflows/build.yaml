@@ -8,9 +8,7 @@ jobs:
   building:
     runs-on: ubuntu-latest
     steps:
-       - name: Action
          uses: actions/checkout@v4
-
          run: export WP="$(realpath $PWD/../)"
          run: . build/ckbuild_actions.sh -tkR
          run: . build/ckbuild_actions.sh -tR
