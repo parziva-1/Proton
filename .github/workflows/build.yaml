@@ -11,9 +11,12 @@ jobs:
        - name: Action
          uses: action/checkout@v4
 
-       - name: Build
+       - name: Env
          run: . build/setwp.sh
+       - name: Build KSU
          run: . build/ckbuild_actions.sh -tkR
+       - name: Build
+         run: . build/ckbuild_actions.sh -tR
 
   bruh:
     runs-on: ubuntu-latest
