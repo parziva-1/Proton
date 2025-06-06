@@ -3937,11 +3937,7 @@ struct mnt_namespace *copy_mnt_ns(unsigned long flags, struct mnt_namespace *ns,
 	copy_flags = CL_COPY_UNBINDABLE | CL_EXPIRE;
 	if (user_ns != ns->user_ns)
 		copy_flags |= CL_SHARED_TO_SLAVE;
-#ifdef CONFIG_KDP_NS
-	new = copy_tree(old, ((struct kdp_mount *)old)->mnt->mnt_root, copy_flags);
-#else
-	new = copy_tree(old, old->mnt.mnt_root, copy_flags);
-#endif
+
 #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
 	// Always let clone_mnt() in copy_tree() know it is from copy_mnt_ns()
 	copy_flags |= CL_COPY_MNT_NS;
@@ -3949,6 +3945,12 @@ struct mnt_namespace *copy_mnt_ns(unsigned long flags, struct mnt_namespace *ns,
 		// Let clone_mnt() in copy_tree() know copy_mnt_ns() is run by zygote process
 		copy_flags |= CL_ZYGOTE_COPY_MNT_NS;
 	}
+#endif
+
+#ifdef CONFIG_KDP_NS
+	new = copy_tree(old, ((struct kdp_mount *)old)->mnt->mnt_root, copy_flags);
+#else
+	new = copy_tree(old, old->mnt.mnt_root, copy_flags);
 #endif
 	if (IS_ERR(new)) {
 		namespace_unlock();
