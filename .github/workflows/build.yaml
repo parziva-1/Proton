@@ -12,7 +12,7 @@ jobs:
          uses: actions/checkout@v4
 
        - name: Env
-         run: . build/setwp.sh
+         run: export WP="$(realpath $PWD/../)"
        - name: Build KSU
          run: . build/ckbuild_actions.sh -tkR
        - name: Build
