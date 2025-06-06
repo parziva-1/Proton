@@ -212,6 +212,7 @@ static int __init sec_detect_init(void) {
 		g_sec_uses_s2mpb02 = true;
 		g_sec_support_hmd = true;
 		g_sec_uses_ssp_unbound = true;
+		g_sec_support_ddi_flash = true;
 	} else if (strstr(machine_name, "P3S") != NULL) {
 		g_sec_current_device = SEC_P3S;
 		strscpy(g_sec_current_device_name, "p3s", sizeof(g_sec_current_device_name));
@@ -224,6 +225,7 @@ static int __init sec_detect_init(void) {
 		g_sec_uses_s2mpb02 = true;
 		g_sec_support_hmd = true;
 		g_sec_uses_ssp_unbound = true;
+		g_sec_support_ddi_flash = true;
 	}
 
 	// Print machine name and sec_ variables
