@@ -37,6 +37,7 @@ static bool g_sec_support_tig = false;
 static bool g_sec_support_hmd = false;
 static bool g_sec_uses_ssp_unbound = false;
 static bool g_sec_uses_ssp_r9s = false;
+static bool g_sec_support_ddi_flash = false;
 
 // Helper functions for each g_sec_ variable
 enum SEC_devices sec_get_current_device(void) { return g_sec_current_device; }
@@ -65,6 +66,9 @@ EXPORT_SYMBOL_GPL(sec_feat_uses_ssp_unbound);
 
 bool sec_feat_uses_ssp_r9s(void) { return g_sec_uses_ssp_r9s; }
 EXPORT_SYMBOL_GPL(sec_feat_uses_ssp_r9s);
+
+bool sec_feat_support_ddi_flash(void) { return g_sec_support_ddi_flash; }
+EXPORT_SYMBOL_GPL(sec_feat_support_ddi_flash);
 
 // Camera params
 static bool mcd_template_camera_feature = false;
@@ -163,6 +167,7 @@ static inline void print_sec_variables(const char *machine_name) {
 	SEC_DETECT_LOG("g_sec_support_hmd = %s\n", g_sec_support_hmd ? "true" : "false");
 	SEC_DETECT_LOG("g_sec_uses_ssp_unbound = %s\n", g_sec_uses_ssp_unbound ? "true" : "false");
 	SEC_DETECT_LOG("g_sec_uses_ssp_r9s = %s\n", g_sec_uses_ssp_r9s ? "true" : "false");
+	SEC_DETECT_LOG("g_sec_support_ddi_flash = %s\n", g_sec_support_ddi_flash ? "true" : "false");
 }
 
 static int __init sec_detect_init(void) {
