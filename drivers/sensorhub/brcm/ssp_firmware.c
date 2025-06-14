@@ -23,11 +23,11 @@
 // #endif
 
 #if defined(CONFIG_SENSORS_SSP_UNBOUND)
-#define SSP_FIRMWARE_REVISION_BCM_R_UNBOUND	23101001
+#define SSP_FIRMWARE_REVISION_BCM_R_UNBOUND	24122600
 #endif
 
 #if defined(CONFIG_SENSORS_SSP_R9S)
-#define SSP_FIRMWARE_REVISION_BCM_R_R9S	23082100
+#define SSP_FIRMWARE_REVISION_BCM_R_R9S	24122600
 #endif
 
 unsigned int get_module_rev(struct ssp_data *data)
