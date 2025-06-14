@@ -17600,7 +17600,7 @@
 					thrd_mb = <0x273285>;
 					freq_mfc = <0x72420>;
 					freq_int = <0x82208>;
-					freq_mif = <0x177bb8>;
+					freq_mif = <0x22e980>;
 					time_fw = <0x169>;
 					bts_scen = "mfc_uhd";
 				};
@@ -17806,7 +17806,7 @@
 					thrd_mb = <0x273285>;
 					freq_mfc = <0x72420>;
 					freq_int = <0x82208>;
-					freq_mif = <0x177bb8>;
+					freq_mif = <0x22e980>;
 					time_fw = <0x169>;
 					bts_scen = "mfc_uhd";
 				};
