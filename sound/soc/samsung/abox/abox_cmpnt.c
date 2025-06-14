@@ -2886,7 +2886,7 @@ static int set_sif_params(struct abox_data *data, enum abox_dai id,
 	enum ABOX_CONFIGMSG msg_rate, msg_format;
 	unsigned int rate, channels;
 	snd_pcm_format_t format;
-	int ret = 0;
+	int mixp_channels, ret = 0;
 
 	ret = get_configmsg(id, &msg_rate, &msg_format);
 	if (ret < 0) {
@@ -2908,6 +2908,14 @@ static int set_sif_params(struct abox_data *data, enum abox_dai id,
 		set_sif_format(data, msg_format, format);
 		set_sif_channels(data, msg_format, channels);
 		format_put_ipc(adev, format, channels, msg_format);
+	}
+
+	if (msg_format == SET_SIFS0_FORMAT) {
+		mixp_channels = get_mixp_channels(data);
+		if (mixp_channels > channels) { /* input(mixp) ch > output ch */
+			format_put_ipc(adev, format, mixp_channels, msg_format);
+			set_sif_channels(data, msg_format, channels); /* update with output ch */
+		}
 	}
 
 	update_ch_num(adev, msg_format);
