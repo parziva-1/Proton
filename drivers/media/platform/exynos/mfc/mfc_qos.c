@@ -343,19 +343,41 @@ static int __mfc_qos_get_bps_section(struct mfc_ctx *ctx, u32 bytesused)
 		list_del(&temp_bitrate->list);
 	}
 
-	new_bitrate->bytesused = bytesused;
-	list_add_tail(&new_bitrate->list, head);
-
 	list_for_each_entry(temp_bitrate, head, list) {
 		mfc_debug(4, "[QoS][%d] strm_size %d\n", count, temp_bitrate->bytesused);
 		sum_size += temp_bitrate->bytesused;
 		count++;
 	}
 
-	if (count == 0) {
-		mfc_ctx_err("[QoS] There is no list for bps\n");
-		return ctx->last_bps_section;
+	if (count != 0) {
+		/*
+		 * If there is a significant difference between previous and new bitrate,
+		 * clear the list to make the frequence higher immediately.
+		 * And, maintain the frequency for 4 frames.
+		 */
+		if (bytesused > ((sum_size / count) * 5)) {
+			while (!list_empty(head)) {
+				temp_bitrate = list_entry(head->next, struct mfc_bitrate, list);
+				mfc_debug(4, "[QoS][%d] delete strm_size %d\n",
+					  count--, temp_bitrate->bytesused);
+				list_del(&temp_bitrate->list);
+			}
+			sum_size = 0;
+			count = 0;
+
+			ctx->bitrate_index = 0;
+			new_bitrate = &ctx->bitrate_array[ctx->bitrate_index];
+			ctx->bitrate_is_full = 0;
+
+			ctx->count_maintain_bps_section = 4;
+		}
 	}
+
+	sum_size += bytesused;
+	count++;
+
+	new_bitrate->bytesused = bytesused;
+	list_add_tail(&new_bitrate->list, head);
 
 	if (IS_MULTI_MODE(ctx))
 		fps = ctx->last_framerate / 1000 / dev->num_core;
@@ -382,6 +404,13 @@ static int __mfc_qos_get_bps_section(struct mfc_ctx *ctx, u32 bytesused)
 	 */
 	if (ctx->src_ts.ts_is_full)
 		bps_section = __mfc_qos_get_bps_section_by_bps(dev, ctx->Kbps);
+
+	if (ctx->count_maintain_bps_section && count != 1) {
+		mfc_debug(3, "[QoS] maintain bps_section %d(cnt :%d)\n",
+			  ctx->last_bps_section, ctx->count_maintain_bps_section);
+		ctx->count_maintain_bps_section--;
+		return ctx->last_bps_section;
+	}
 
 	return bps_section;
 }

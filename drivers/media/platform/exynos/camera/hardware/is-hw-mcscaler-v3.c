@@ -752,6 +752,7 @@ static void is_hw_mcsc_wdma_cfg(struct is_hw_ip *hw_ip, struct is_frame *frame)
 			plane = output->plane;
 #ifdef USE_MCSC_STRIP_OUT_CROP
 			stripe_dma_offset = 0;
+			roi_x = 0;
 			if (is_scaler_get_poly_out_crop_enable(hw_ip->regs[REG_SETA], out_id)
 			|| is_scaler_get_post_out_crop_enable(hw_ip->regs[REG_SETA], out_id)) {
 				if (output->flip & 1) /* X flip */
