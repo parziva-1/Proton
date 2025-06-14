@@ -339,6 +339,12 @@ static bool dit_hal_set_local_addr(struct nat_local_addr *local_addr)
 	int ret = false;
 
 	spin_lock_irqsave(&dc->src_lock, flags);
+
+	if (local_addr->index >= DIT_REG_NAT_LOCAL_ADDR_MAX) {
+		mif_err("invalid index 0x%08X\n", local_addr->index);
+		goto exit;
+	}
+
 	/* local IP addr */
 	if (dit_enqueue_reg_value_with_ext_lock(local_addr->addr,
 		DIT_REG_NAT_LOCAL_ADDR +
@@ -395,6 +401,13 @@ exit:
 static bool dit_hal_set_local_port(struct nat_local_port *local_port)
 {
 	spin_lock(&dhc->hal_lock);
+
+	if (local_port->reply_port_dst_l >= DIT_REG_NAT_LOCAL_PORT_MAX) {
+		mif_err("invalid port 0x%08X\n", local_port->reply_port_dst_l);
+		spin_unlock(&dhc->hal_lock);
+		return false;
+	}
+
 	if (!dhc->hal_enabled) {
 		spin_unlock(&dhc->hal_lock);
 		mif_err("hal is not enabled\n");

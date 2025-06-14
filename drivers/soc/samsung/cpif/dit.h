@@ -310,6 +310,7 @@ struct dit_desc_info {
 };
 
 struct dit_ctrl_t {
+	spinlock_t rx_buf_lock;
 	struct device *dev;
 	struct link_device *ld;
 	struct net_device *netdev;
