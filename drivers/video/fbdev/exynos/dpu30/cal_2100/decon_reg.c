@@ -2402,10 +2402,18 @@ int decon_reg_check_global_limitation(struct decon_device *decon,
 	const struct dpu_fmt *fmt_info;
 #endif
 
-	if ((config[decon->dt.wb_win].state == DECON_WIN_STATE_BUFFER) &&
-			config[decon->dt.wb_win].channel != (decon->dt.dpp_cnt - 1)) {
-		ret = -EINVAL;
-		goto err;
+	if (config[decon->dt.wb_win].state == DECON_WIN_STATE_BUFFER) {
+		struct decon_frame *src = &config[decon->dt.wb_win].src;
+
+		if (config[decon->dt.wb_win].channel != (decon->dt.dpp_cnt - 1)) {
+			ret = -EINVAL;
+			goto err;
+		}
+		if (src->x + src->w > src->f_w || src->y + src->h > src->f_h) {
+			decon_err("decon%d unsupported src range!\n", decon->id);
+			ret = -EINVAL;
+			goto err;
+		}
 	}
 
 	for (i = 0; i < MAX_DECON_WIN; i++) {
