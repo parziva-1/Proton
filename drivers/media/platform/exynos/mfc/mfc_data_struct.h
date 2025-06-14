@@ -2232,6 +2232,7 @@ struct mfc_ctx {
 	int load;
 	unsigned long weighted_mb;
 	struct list_head list;
+	int count_maintain_bps_section;
 
 	/* boosting timer */
 	u64 boosting_time;

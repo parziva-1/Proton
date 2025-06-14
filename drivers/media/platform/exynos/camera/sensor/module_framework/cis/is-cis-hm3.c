@@ -2454,12 +2454,8 @@ int sensor_hm3_cis_set_exposure_time(struct v4l2_subdev *subdev, struct ae_param
 	u16 short_coarse_int = 0;
 	u32 line_length_pck = 0;
 	u32 min_fine_int = 0;
-	u16 coarse_integration_time_shifter = 0;
-
-	u16 cit_shifter_array[33] = {0,1,2,2,3,3,3,3,4,4,4,4,4,4,4,4,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,6};
-	u16 cit_shifter_val = 0;
-	int cit_shifter_idx = 0;
-	u8 cit_denom_array[7] = {1, 2, 4, 8, 16, 32, 64};
+	u32 input_duration;
+	u8 cit_shifter = 0;
 
 #ifdef DEBUG_SENSOR_TIME
 	struct timeval st, end;
@@ -2494,19 +2490,12 @@ int sensor_hm3_cis_set_exposure_time(struct v4l2_subdev *subdev, struct ae_param
 	cis_data = cis->cis_data;
 
 	if (cis->long_term_mode.sen_strm_off_on_enable == false) {
-		switch(cis_data->sens_config_index_cur) {
-		default:
-			if (MAX(target_exposure->long_val, target_exposure->short_val) > 160000) {
-				cit_shifter_idx = MIN(MAX(MAX(target_exposure->long_val, target_exposure->short_val) / 160000, 0), 32);
-				cit_shifter_val = MAX(cit_shifter_array[cit_shifter_idx], cis_data->frame_length_lines_shifter);
-			} else {
-				cit_shifter_val = (u16)(cis_data->frame_length_lines_shifter);
-			}
-			target_exposure->long_val = target_exposure->long_val / cit_denom_array[cit_shifter_val];
-			target_exposure->short_val = target_exposure->short_val / cit_denom_array[cit_shifter_val];
-			coarse_integration_time_shifter = ((cit_shifter_val<<8) & 0xFF00) + (cit_shifter_val & 0x00FF);
-			break;
-		}
+		input_duration = MAX(target_exposure->long_val, target_exposure->short_val);
+		cit_shifter = sensor_cis_get_duration_shifter(cis, input_duration);
+
+		cit_shifter = MAX(cit_shifter, cis_data->frame_length_lines_shifter);
+		target_exposure->long_val >>= cit_shifter;
+		target_exposure->short_val >>= cit_shifter;
 	}
 
 	dbg_sensor(1, "[MOD:D:%d] %s, vsync_cnt(%d), target long(%d), short(%d)\n", cis->id, __func__,
@@ -2580,7 +2569,7 @@ int sensor_hm3_cis_set_exposure_time(struct v4l2_subdev *subdev, struct ae_param
 
 	/* CIT shifter */
 	if (cis->long_term_mode.sen_strm_off_on_enable == false) {
-		ret = is_sensor_write16(client, 0x0704, coarse_integration_time_shifter);
+		ret = is_sensor_write8(client, 0x0705, cit_shifter); /* for wdr long frame */
 		if (ret < 0)
 			goto p_err_i2c_unlock;
 	}
@@ -2590,9 +2579,9 @@ int sensor_hm3_cis_set_exposure_time(struct v4l2_subdev *subdev, struct ae_param
 		cis->id, __func__, cis_data->sen_vsync_count, vt_pic_clk_freq_khz/1000,
 		line_length_pck, min_fine_int);
 	dbg_sensor(1, "[MOD:D:%d] %s, vsync_cnt(%d), frame_length_lines(%#x),"
-		KERN_CONT "long_coarse_int %#x, short_coarse_int %#x coarse_integration_time_shifter %#x\n",
+		KERN_CONT "long_coarse_int %#x, short_coarse_int %#x cit_shifter %#x\n",
 		cis->id, __func__, cis_data->sen_vsync_count, cis_data->frame_length_lines,
-		long_coarse_int, short_coarse_int, coarse_integration_time_shifter);
+		long_coarse_int, short_coarse_int, cit_shifter);
 
 #ifdef DEBUG_SENSOR_TIME
 	do_gettimeofday(&end);
@@ -2809,11 +2798,7 @@ int sensor_hm3_cis_set_frame_duration(struct v4l2_subdev *subdev, u32 frame_dura
 	u64 vt_pic_clk_freq_khz = 0;
 	u32 line_length_pck = 0;
 	u16 frame_length_lines = 0;
-	u8 frame_length_lines_shifter = 0;
-
-	u8 fll_shifter_array[33] = {0,1,2,2,3,3,3,3,4,4,4,4,4,4,4,4,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,6};
-	int fll_shifter_idx = 0;
-	u8 fll_denom_array[7] = {1, 2, 4, 8, 16, 32, 64};
+	u8 fll_shifter = 0;
 
 #ifdef DEBUG_SENSOR_TIME
 	struct timeval st, end;
@@ -2848,17 +2833,8 @@ int sensor_hm3_cis_set_frame_duration(struct v4l2_subdev *subdev, u32 frame_dura
 	cis_data->cur_frame_us_time = frame_duration;
 
 	if (cis->long_term_mode.sen_strm_off_on_enable == false) {
-		switch(cis_data->sens_config_index_cur) {
-		default:
-			if (frame_duration > 160000) {
-				fll_shifter_idx = MIN(MAX(frame_duration / 160000, 0), 32);
-				frame_length_lines_shifter = fll_shifter_array[fll_shifter_idx];
-				frame_duration = frame_duration / fll_denom_array[frame_length_lines_shifter];
-			} else {
-				frame_length_lines_shifter = 0x0;
-			}
-			break;
-		}
+		fll_shifter = sensor_cis_get_duration_shifter(cis, frame_duration);
+		frame_duration >>= fll_shifter;
 	}
 
 	vt_pic_clk_freq_khz = cis_data->pclk / (1000);
@@ -2866,10 +2842,10 @@ int sensor_hm3_cis_set_frame_duration(struct v4l2_subdev *subdev, u32 frame_dura
 
 	frame_length_lines = (u16)((vt_pic_clk_freq_khz * frame_duration) / (line_length_pck * 1000));
 
-	dbg_sensor(1, "[MOD:D:%d] %s, vt_pic_clk_freq_khz(%#x) frame_duration = %d us,"
-			KERN_CONT "(line_length_pck%#x), frame_length_lines(%#x), frame_length_lines_shifter(%#x)\n",
+	dbg_sensor(1, "[MOD:D:%d] %s, vt_pic_clk_freq_khz(%llu) frame_duration = %d us,"
+			KERN_CONT "(line_length_pck%#x), frame_length_lines(%#x), fll_shifter(%#x)\n",
 			cis->id, __func__, vt_pic_clk_freq_khz/1000, frame_duration,
-			line_length_pck, frame_length_lines, frame_length_lines_shifter);
+			line_length_pck, frame_length_lines, fll_shifter);
 
 	I2C_MUTEX_LOCK(cis->i2c_lock);
 	hold = sensor_hm3_cis_group_param_hold_func(subdev, 0x01);
@@ -2885,14 +2861,14 @@ int sensor_hm3_cis_set_frame_duration(struct v4l2_subdev *subdev, u32 frame_dura
 
 	/* frame duration shifter */
 	if (cis->long_term_mode.sen_strm_off_on_enable == false) {
-		ret = is_sensor_write8(client, 0x0702, frame_length_lines_shifter);
+		ret = is_sensor_write8(client, 0x0702, fll_shifter);
 		if (ret < 0)
 			goto p_err_i2c_unlock;
 	}
 
 	cis_data->frame_length_lines = frame_length_lines;
 	cis_data->max_coarse_integration_time = cis_data->frame_length_lines - cis_data->max_margin_coarse_integration_time;
-	cis_data->frame_length_lines_shifter = frame_length_lines_shifter;
+	cis_data->frame_length_lines_shifter = fll_shifter;
 
 #ifdef DEBUG_SENSOR_TIME
 	do_gettimeofday(&end);
