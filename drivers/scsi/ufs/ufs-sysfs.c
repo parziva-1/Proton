@@ -1220,6 +1220,33 @@ void SEC_scsi_sense_error_check(struct ufshcd_lrb *lrbp)
 		sense_err->scsi_hw_err++;
 }
 
+/* SEC s_info : begin */
+#define UFS_S_INFO_SIZE 512
+static char s_info[UFS_S_INFO_SIZE];
+
+static ssize_t SEC_UFS_s_info_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	return sprintf(buf, "%s\n", s_info);
+}
+static ssize_t SEC_UFS_s_info_store(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t count)
+{
+	int ret;
+	char s_buf[UFS_S_INFO_SIZE] = {0, };
+
+	ret = sscanf(buf, "%511s", s_buf);
+	if (ret != 1)
+		return -EINVAL;
+
+	snprintf(s_info, UFS_S_INFO_SIZE, "%s", s_buf);
+
+	return count;
+}
+static DEVICE_ATTR(SEC_UFS_s_info, 0664,
+		SEC_UFS_s_info_show, SEC_UFS_s_info_store);
+/* SEC s_info : end */
+
 SEC_UFS_DATA_ATTR(SEC_UFS_op_cnt, "\"HWRESET\":\"%u\",\"LINKFAIL\":\"%u\",\"H8ENTERFAIL\":\"%u\",\"H8EXITFAIL\":\"%u\"\n",
 		SEC_err_info.op_count.HW_RESET_count, SEC_err_info.op_count.link_startup_count,
 		SEC_err_info.op_count.Hibern8_enter_count, SEC_err_info.op_count.Hibern8_exit_count);
@@ -1322,6 +1349,7 @@ static struct attribute *sec_ufs_error_attributes[] = {
 	&dev_attr_SEC_UFS_err_sum.attr,
 	&dev_attr_sense_err_count.attr,
 	&dev_attr_sense_err_logging.attr,
+	&dev_attr_SEC_UFS_s_info.attr,
 	NULL
 };
 

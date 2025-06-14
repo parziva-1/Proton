@@ -591,9 +591,34 @@ static void ufs_get_health_desc(struct ufs_hba *hba)
 				__func__, err);
 		goto out;
 	}
-	/* getting Life Time at Device Health DESC*/
-	ufs_vdi.lifetime = desc_buf[HEALTH_DESC_PARAM_LIFE_TIME_EST_A];
-	dev_info(hba->dev, "LT: 0x%02x\n", (desc_buf[3] << 4) | desc_buf[4]);
+
+	ufs_vdi.lt = desc_buf[HEALTH_DESC_PARAM_LIFE_TIME_EST_A];
+	ufs_vdi.eli = desc_buf[HEALTH_DESC_PARAM_EOL_INFO];
+
+	switch (hba->dev_info.wmanufacturerid) {
+	case UFS_VENDOR_SAMSUNG:
+		ufs_vdi.flt = (u16)desc_buf[HEALTH_DESC_PARAM_SEC_FLT];
+		break;
+	case UFS_VENDOR_TOSHIBA:
+		ufs_vdi.flt = (((u16)desc_buf[HEALTH_DESC_PARAM_KIC_FLT] << 8) |
+				(u16)desc_buf[HEALTH_DESC_PARAM_KIC_FLT + 1]);
+		break;
+	case UFS_VENDOR_MICRON:
+		ufs_vdi.flt = (u16)desc_buf[HEALTH_DESC_PARAM_MIC_FLT];
+		break;
+	case UFS_VENDOR_SKHYNIX:
+		ufs_vdi.flt = (((u16)desc_buf[HEALTH_DESC_PARAM_SKH_FLT] << 8) |
+				(u16)desc_buf[HEALTH_DESC_PARAM_SKH_FLT + 1]);
+		break;
+	default:
+		ufs_vdi.flt = 0;
+		break;
+	}
+
+	dev_info(hba->dev, "LT: 0x%02x, FLT: %u, ELI: 0x%01x\n",
+			((desc_buf[HEALTH_DESC_PARAM_LIFE_TIME_EST_A] << 4) |
+			desc_buf[HEALTH_DESC_PARAM_LIFE_TIME_EST_B]),
+			ufs_vdi.flt, ufs_vdi.eli);
 out:
 	kfree(desc_buf);
 }
@@ -948,7 +973,7 @@ static void ufs_sec_wb_config(struct ufs_hba *hba)
 	set_wb_state(wb_info, WB_OFF);
 	trace_mark_count('C', "UFS-WB", "state", wb_info->state, 0, 0, 0, 1);
 
-	if (ufs_vdi.lifetime >= (u8)wb_info->wb_disable_threshold_lt)
+	if (ufs_vdi.lt >= (u8)wb_info->wb_disable_threshold_lt)
 		goto wb_disabled;
 
 	/* reset wb disable count and enable wb */
@@ -1068,7 +1093,7 @@ static ssize_t ufs_lt_show(struct device *dev,
 	hba = ufs_vdi.hba;
 	if (!hba) {
 		dev_info(dev, "skipping ufs lt read\n");
-		ufs_vdi.lifetime = 0;
+		ufs_vdi.lt = 0;
 	} else if (hba->ufshcd_state == UFSHCD_STATE_OPERATIONAL) {
 		pm_runtime_get_sync(hba->dev);
 		ufs_get_health_desc(hba);
@@ -1076,32 +1101,88 @@ static ssize_t ufs_lt_show(struct device *dev,
 	} else {
 		/* return previous LT value if not operational */
 		dev_info(hba->dev, "ufshcd_state : %d, old LT: %01x\n",
-					hba->ufshcd_state, ufs_vdi.lifetime);
+					hba->ufshcd_state, ufs_vdi.lt);
 	}
 
-	return snprintf(buf, PAGE_SIZE, "%01x\n", ufs_vdi.lifetime);
+	return snprintf(buf, PAGE_SIZE, "%01x\n", ufs_vdi.lt);
 }
 static DEVICE_ATTR(lt, 0444, ufs_lt_show, NULL);
 
-static ssize_t ufs_lc_info_show(struct device *dev,
+static ssize_t ufs_flt_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
-	return sprintf(buf, "%u\n", ufs_vdi.lc_info);
+	struct ufs_hba *hba;
+	hba = ufs_vdi.hba;
+	if (!hba) {
+		dev_err(dev, "skipping ufs flt read\n");
+		ufs_vdi.flt = 0;
+	} else if (hba->ufshcd_state == UFSHCD_STATE_OPERATIONAL) {
+		pm_runtime_get_sync(hba->dev);
+		ufs_get_health_desc(hba);
+		pm_runtime_put_sync(hba->dev);
+	} else {
+		/* return previous FLT value if not operational */
+		dev_info(hba->dev, "ufshcd_state : %d, old FLT: %u\n",
+				hba->ufshcd_state, ufs_vdi.flt);
+	}
+	return snprintf(buf, PAGE_SIZE, "%u\n", ufs_vdi.flt);
 }
+static DEVICE_ATTR(flt, 0444, ufs_flt_show, NULL);
 
-static ssize_t ufs_lc_info_store(struct device *dev,
+static ssize_t ufs_eli_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct ufs_hba *hba;
+	hba = ufs_vdi.hba;
+	if (!hba) {
+		dev_err(dev, "skipping ufs eli read\n");
+		ufs_vdi.eli = 0;
+	} else if (hba->ufshcd_state == UFSHCD_STATE_OPERATIONAL) {
+		pm_runtime_get_sync(hba->dev);
+		ufs_get_health_desc(hba);
+		pm_runtime_put_sync(hba->dev);
+	} else {
+		/* return previous ELI value if not operational */
+		dev_info(hba->dev, "ufshcd_state: %d, old eli: %01x\n",
+				hba->ufshcd_state, ufs_vdi.eli);
+	}
+	return sprintf(buf, "%u\n", ufs_vdi.eli);
+}
+static DEVICE_ATTR(eli, 0444, ufs_eli_show, NULL);
+
+static ssize_t ufs_ic_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	return sprintf(buf, "%u\n", ufs_vdi.ic);
+}
+static ssize_t ufs_ic_store(struct device *dev,
 		struct device_attribute *attr, const char *buf, size_t count)
 {
 	unsigned int value;
-
 	if (kstrtou32(buf, 0, &value))
 		return -EINVAL;
-
-	ufs_vdi.lc_info = value;
-
+	ufs_vdi.ic = value;
 	return count;
 }
-static DEVICE_ATTR(lc, 0664, ufs_lc_info_show, ufs_lc_info_store);
+static DEVICE_ATTR(ic, 0664, ufs_ic_show, ufs_ic_store);
+
+static ssize_t ufs_shi_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	return sprintf(buf, "%s\n", ufs_vdi.shi);
+}
+static ssize_t ufs_shi_store(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t count)
+{
+	int ret;
+	char shi_buf[UFS_SHI_SIZE] = {0, };
+	ret = sscanf(buf, "%255[^\n]%*c", shi_buf);
+	if (ret != 1)
+		return -EINVAL;
+	snprintf(ufs_vdi.shi, UFS_SHI_SIZE, "%s", shi_buf);
+	return count;
+}
+static DEVICE_ATTR(shi, 0664, ufs_shi_show, ufs_shi_store);
 
 static ssize_t ufs_man_id_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
@@ -1287,19 +1368,28 @@ static inline int create_ufs_sys_file(struct device *dev, struct exynos_ufs *ufs
 	else {
 		if (device_create_file(sec_ufs_cmd_dev,
 					&dev_attr_un) < 0)
-			pr_err("Fail to create status sysfs file\n");
+			pr_err("Fail to create un sysfs file\n");
 		if (device_create_file(sec_ufs_cmd_dev,
 					&dev_attr_lt) < 0)
-			pr_err("Fail to create status sysfs file\n");
+			pr_err("Fail to create lt sysfs file\n");
 		if (device_create_file(sec_ufs_cmd_dev,
-					&dev_attr_lc) < 0)
-			pr_err("Fail to create status sysfs file\n");
+					&dev_attr_ic) < 0)
+			pr_err("Fail to create ic sysfs file\n");
 		if (device_create_file(sec_ufs_cmd_dev,
 					&dev_attr_man_id) < 0)
-			pr_err("Fail to create status sysfs file\n");
+			pr_err("Fail to create man_id sysfs file\n");
 		if (device_create_file(sec_ufs_cmd_dev,
 					&dev_attr_transferred_cnt) < 0)
-			pr_err("Fail to create status sysfs file\n");
+			pr_err("Fail to create transferred_cnt sysfs file\n");
+		if (device_create_file(sec_ufs_cmd_dev,
+					&dev_attr_flt) < 0)
+			pr_err("Fail to create flt sysfs file\n");
+		if (device_create_file(sec_ufs_cmd_dev,
+					&dev_attr_eli) < 0)
+			pr_err("Fail to create eli sysfs file\n");
+		if (device_create_file(sec_ufs_cmd_dev,
+					&dev_attr_shi) < 0)
+			pr_err("Fail to create shi sysfs file\n");
 	}
 
 	return 0;
