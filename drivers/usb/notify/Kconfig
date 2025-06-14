@@ -148,3 +148,13 @@ config GKI_USB
 	bool "Test feature for GKI"
 	help
 	 If GKI_USB feature is enabled, build for GKI TEST 
+
+config USE_USB_COMMUNICATIONS_CAPABLE
+	bool "use usb communications capable in source capability"
+	depends on USB_NOTIFY_LAYER
+	default y
+	help
+	 usb_notify can receive usb communications capable event.
+	 it can be used for various processing using event.
+	 You can check if the device that supports PD is the actual usb port.
+	 If this function is implemented, this feature will be default y
