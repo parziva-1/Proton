@@ -38,7 +38,6 @@ enum {
 	FAULT_INFO_TYPE,	/* struct f2fs_fault_info */
 #endif
 	RESERVED_BLOCKS,	/* struct f2fs_sb_info */
-	ATGC_INFO,	/* struct atgc_management */
 };
 
 #ifdef CONFIG_F2FS_SEC_BLOCK_OPERATIONS_DEBUG
@@ -1022,10 +1021,11 @@ static struct f2fs_attr f2fs_attr_##_name = {			\
 #define F2FS_GENERAL_RO_ATTR(name) \
 static struct f2fs_attr f2fs_attr_##name = __ATTR(name, 0444, name##_show, NULL)
 
-#define F2FS_FEATURE_RO_ATTR(_name)				\
+#define F2FS_FEATURE_RO_ATTR(_name, _id)			\
 static struct f2fs_attr f2fs_attr_##_name = {			\
 	.attr = {.name = __stringify(_name), .mode = 0444 },	\
 	.show	= f2fs_feature_show,				\
+	.id	= _id,						\
 }
 
 #define F2FS_STAT_ATTR(_struct_type, _struct_name, _name, _elname)	\
@@ -1116,36 +1116,36 @@ F2FS_GENERAL_RO_ATTR(avg_vblocks);
 #endif
 
 #ifdef CONFIG_FS_ENCRYPTION
-F2FS_FEATURE_RO_ATTR(encryption);
-F2FS_FEATURE_RO_ATTR(test_dummy_encryption_v2);
+F2FS_FEATURE_RO_ATTR(encryption, FEAT_CRYPTO);
+F2FS_FEATURE_RO_ATTR(test_dummy_encryption_v2, FEAT_TEST_DUMMY_ENCRYPTION_V2);
 #ifdef CONFIG_UNICODE
-F2FS_FEATURE_RO_ATTR(encrypted_casefold);
+F2FS_FEATURE_RO_ATTR(encrypted_casefold, FEAT_ENCRYPTED_CASEFOLD);
 #endif
 #endif /* CONFIG_FS_ENCRYPTION */
 #ifdef CONFIG_BLK_DEV_ZONED
-F2FS_FEATURE_RO_ATTR(block_zoned);
+F2FS_FEATURE_RO_ATTR(block_zoned, FEAT_BLKZONED);
 #endif
-F2FS_FEATURE_RO_ATTR(atomic_write);
-F2FS_FEATURE_RO_ATTR(extra_attr);
-F2FS_FEATURE_RO_ATTR(project_quota);
-F2FS_FEATURE_RO_ATTR(inode_checksum);
-F2FS_FEATURE_RO_ATTR(flexible_inline_xattr);
-F2FS_FEATURE_RO_ATTR(quota_ino);
-F2FS_FEATURE_RO_ATTR(inode_crtime);
-F2FS_FEATURE_RO_ATTR(lost_found);
+F2FS_FEATURE_RO_ATTR(atomic_write, FEAT_ATOMIC_WRITE);
+F2FS_FEATURE_RO_ATTR(extra_attr, FEAT_EXTRA_ATTR);
+F2FS_FEATURE_RO_ATTR(project_quota, FEAT_PROJECT_QUOTA);
+F2FS_FEATURE_RO_ATTR(inode_checksum, FEAT_INODE_CHECKSUM);
+F2FS_FEATURE_RO_ATTR(flexible_inline_xattr, FEAT_FLEXIBLE_INLINE_XATTR);
+F2FS_FEATURE_RO_ATTR(quota_ino, FEAT_QUOTA_INO);
+F2FS_FEATURE_RO_ATTR(inode_crtime, FEAT_INODE_CRTIME);
+F2FS_FEATURE_RO_ATTR(lost_found, FEAT_LOST_FOUND);
 #ifdef CONFIG_FS_VERITY
-F2FS_FEATURE_RO_ATTR(verity);
+F2FS_FEATURE_RO_ATTR(verity, FEAT_VERITY);
 #endif
-F2FS_FEATURE_RO_ATTR(sb_checksum);
+F2FS_FEATURE_RO_ATTR(sb_checksum, FEAT_SB_CHECKSUM);
 #ifdef CONFIG_UNICODE
-F2FS_FEATURE_RO_ATTR(casefold);
+F2FS_FEATURE_RO_ATTR(casefold, FEAT_CASEFOLD);
 #endif
-F2FS_FEATURE_RO_ATTR(readonly);
+F2FS_FEATURE_RO_ATTR(readonly, FEAT_RO);
 #ifdef CONFIG_F2FS_FS_COMPRESSION
-F2FS_FEATURE_RO_ATTR(compression);
+F2FS_FEATURE_RO_ATTR(compression, FEAT_COMPRESSION);
 #endif
 #ifdef CONFIG_F2FS_SEC_SUPPORT_DNODE_RELOCATION
-F2FS_FEATURE_RO_ATTR(sec_dnode_relocation);
+F2FS_FEATURE_RO_ATTR(sec_dnode_relocation, FEAT_SEC_DNODE_RELOCATION);
 #endif
 F2FS_FEATURE_RO_ATTR(pin_file);
 #ifdef CONFIG_UNICODE
