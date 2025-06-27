@@ -4,6 +4,10 @@
 # Based on build script for Quicksilver, by Ghostrider.
 # Copyright (C) 2020-2021 Adithya R. (original version)
 # Copyright (C) 2022-2024 Flopster101 (rewrite)
+#
+# The logic for module and image packaging was originally written by Gabriel2392.
+# https://github.com/Gabriel2392/android_kernel_samsung_a33x_xy
+#
 
 ## Vars
 # Toolchains
