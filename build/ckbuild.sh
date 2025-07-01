@@ -173,10 +173,10 @@ FK_TYPE=""
 if [ $DO_KSU -eq 1 ]; then
     FK_TYPE="KSU"
 else
-    FK_TYPE="Vanilla"
+    FK_TYPE="Non-root"
 fi
 ZIP_PATH="$KDIR/build/ProtonPlus-$K_VER-$FK_TYPE-$CODENAME-$DATE.zip"
-TAR_PATH="$KDIR/build/Nigga_$K_VER-$FK_TYPE-$CODENAME-$DATE.tar"
+TAR_PATH="$KDIR/build/ProtonPlus-_$K_VER-$FK_TYPE-$CODENAME-$DATE.tar"
 
 echo -e "\nINFO: Build info:
 - Device: $DEVICE ($CODENAME)
