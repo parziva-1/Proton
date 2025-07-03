@@ -1284,9 +1284,9 @@ void sec_bat_set_charging_status(struct sec_battery_info *battery, int status)
 		break;
 	case POWER_SUPPLY_STATUS_NOT_CHARGING:
 	case POWER_SUPPLY_STATUS_DISCHARGING:
-		if ((battery->status == POWER_SUPPLY_STATUS_FULL ||
+		if (battery->status == POWER_SUPPLY_STATUS_FULL ||
 			(battery->capacity == 100 && !is_slate_mode(battery))) &&
-			!battery->store_mode && battery->charging_enabled) {
+			!battery->store_mode && battery->charging_enabled && !is_eu_eco_rechg(battery->fs) {
 
 			pr_info("%s : Update fg scale to 101%%\n", __func__);
 			value.intval = 100;
