@@ -3460,7 +3460,6 @@ static int sec_bat_check_skip_monitor(struct sec_battery_info *battery)
 
 static void sec_bat_check_store_mode(struct sec_battery_info *battery)
 {
-	
 	if (sec_bat_get_facmode())
 		return;
 	if (!is_nocharge_type(battery->cable_type) && !battery->charging_enabled) {
