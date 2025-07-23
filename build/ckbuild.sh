@@ -64,7 +64,6 @@ OUTDIR="$KDIR/out"
 MOD_OUTDIR="$KDIR/modules_out"
 TMPDIR="$KDIR/build/tmp"
 IN_VBOOT="$KDIR/build/vboot"
-IN_DTB="$OUTDIR/arch/arm64/boot/dts/exynos/exynos2100.dtb"
 RAMDISK_DIR="$TMPDIR/vboot_ramdisk"
 PREBUILT_RAMDISK="$KDIR/build/boot/ramdisk"
 MODULES_DIR="$RAMDISK_DIR/lib/modules"
@@ -76,13 +75,23 @@ OUT_DTBIMAGE="$TMPDIR/dtb.img"
 MKBOOTIMG="$(pwd)/build/mkbootimg/mkbootimg.py"
 MKDTBOIMG="$(pwd)/build/dtb/mkdtboimg.py"
 
+# DTS files
+DTS_DEFAULT="$KDIR/arch/arm64/boot/dts/exynos/exynos2100.dts"
+DTS_BALANCED="$KDIR/arch/arm64/boot/dts/exynos/exynos2100_balanced.dts"
+DTS_BATTERY="$KDIR/arch/arm64/boot/dts/exynos/exynos2100_battery.dts"
+
 # Dependencies
-UB_DEPLIST="lz4 brotli flex bc cpio kmod ccache zip binutils-aarch64-linux-gnu"
+UB_DEPLIST="lz4 brotli flex bc cpio kmod ccache zip binutils-aarch64-linux-gnu device-tree-compiler"
 if grep -q "Ubuntu" /etc/os-release; then
     sudo apt install $UB_DEPLIST -y
 else
     echo -e "\nINFO: Your distro is not Ubuntu, skipping dependencies installation..."
     echo -e "INFO: Make sure you have these dependencies installed before proceeding: $UB_DEPLIST"
+fi
+
+if ! command -v dtc &>/dev/null; then
+    echo -e "\nERROR: 'dtc' (Device Tree Compiler) is not installed. Aborting...\n"
+    exit 1
 fi
 
 ## Customizable vars
@@ -112,7 +121,13 @@ DO_MENUCONFIG=0
 IS_RELEASE=0
 DO_TG=0
 DEFCONFIG=$DEFAULT_DEFCONFIG
-for arg in "$@"
+# Build type selection
+BUILD_VARIANT="default"
+if [ $# -ge 2 ]; then
+    BUILD_VARIANT="$2"
+fi
+
+for arg in "$1"
 do
     if [[ "$arg" == *m* ]]; then
         echo -e "\nINFO: menuconfig argument passed, kernel configuration menu will be shown..."
@@ -149,6 +164,30 @@ do
     fi
 done
 
+# Build type variables
+BUILD_TYPE_DEFAULT=1
+BUILD_TYPE_BALANCED=0
+BUILD_TYPE_BATTERY=0
+case "$BUILD_VARIANT" in
+    default)
+        BUILD_TYPE_DEFAULT=1
+        ;;
+    balanced)
+        BUILD_TYPE_STR="Balanced++"
+        BUILD_TYPE_DEFAULT=0
+        BUILD_TYPE_BALANCED=1
+        ;;
+    battery)
+        BUILD_TYPE_STR="Battery"
+        BUILD_TYPE_DEFAULT=0
+        BUILD_TYPE_BATTERY=1
+        ;;
+    *)
+        echo "Unknown build variant: $BUILD_VARIANT, defaulting to 'default'"
+        BUILD_TYPE_DEFAULT=1
+        ;;
+esac
+
 if [ $DO_TG -eq 1 ]; then
 IDS="$WP/ids"
 ## Secrets
@@ -175,8 +214,14 @@ if [ $DO_KSU -eq 1 ]; then
 else
     FK_TYPE="Non-root"
 fi
+if [[ "$BUILD_TYPE_BALANCED" == "1" ]]; then
+    FK_TYPE="$BUILD_TYPE_STR-$FK_TYPE"
+elif [[ "$BUILD_TYPE_BATTERY" == "1" ]]; then
+    FK_TYPE="$BUILD_TYPE_STR-$FK_TYPE"
+fi
+
 ZIP_PATH="$KDIR/build/ProtonPlus-$K_VER-$FK_TYPE-$CODENAME-$DATE.zip"
-TAR_PATH="$KDIR/build/ProtonPlus-_$K_VER-$FK_TYPE-$CODENAME-$DATE.tar"
+TAR_PATH="$KDIR/build/ProtonPlus-$K_VER-$FK_TYPE-$CODENAME-$DATE.tar"
 
 echo -e "\nINFO: Build info:
 - Device: $DEVICE ($CODENAME)
@@ -186,6 +231,7 @@ echo -e "\nINFO: Build info:
 - Defconfig: $DEFCONFIG
 - Build date: $DATE
 - Build type: $BUILD_TYPE
+- Build variant: $BUILD_VARIANT
 - Clean build = $DO_CLEAN
 "
 
@@ -267,6 +313,7 @@ CAPTION_BUILD="Build info:
 *Branch*: \`$(git rev-parse --abbrev-ref HEAD)\`
 *Commit*: [($(git rev-parse HEAD | cut -c -7))]($(echo $KERNEL_URL)/commit/$(git rev-parse HEAD))
 *Build type*: \`$BUILD_TYPE\`
+*Build variant*: \`$BUILD_VARIANT\`
 *Clean build*: \`$( [ "$DO_CLEAN" -eq 1 ] && echo Yes || echo No )\`
 "
 
@@ -310,6 +357,9 @@ build() {
     export LLVM_IAS=1
     export ARCH=arm64
     VERSION_STR="\"-ProtonPlus-$K_VER\""
+    if [ "$BUILD_TYPE_DEFAULT" != "1" ]; then
+        VERSION_STR="\"-ProtonPlus-$K_VER-$BUILD_TYPE_STR\""
+    fi
 
     # Delete leftovers
     rm -f $OUT_KERNEL
@@ -336,6 +386,18 @@ build() {
     if [[ "$DO_FLTO" == "1" ]]; then
         scripts/config --file "$KDIR/out/.config" --enable CONFIG_LTO_CLANG
         scripts/config --file "$KDIR/out/.config" --disable CONFIG_THINLTO
+    fi
+
+    if [ "$BUILD_TYPE_BALANCED" == "1" ]; then
+        scripts/config --file "$KDIR/out/.config" --set-val CONFIG_SOC_EXYNOS2100_CL0_UV 4
+        scripts/config --file "$KDIR/out/.config" --set-val CONFIG_SOC_EXYNOS2100_CL1_UV 4
+        scripts/config --file "$KDIR/out/.config" --set-val CONFIG_SOC_EXYNOS2100_CL2_UV 3
+    fi
+
+    if [ "$BUILD_TYPE_BATTERY" == "1" ]; then
+        scripts/config --file "$KDIR/out/.config" --set-val CONFIG_SOC_EXYNOS2100_CL0_UV 5
+        scripts/config --file "$KDIR/out/.config" --set-val CONFIG_SOC_EXYNOS2100_CL1_UV 4
+        scripts/config --file "$KDIR/out/.config" --set-val CONFIG_SOC_EXYNOS2100_CL2_UV 4
     fi
 
     ## Start the build
@@ -425,6 +487,22 @@ post_build() {
     mkdir "$RAMDISK_DIR"
     mkdir -p "$MODULES_DIR/0.0"
 
+    ## Compile correct DTS for variant
+    DTB_OUT="$TMPDIR/exynos2100.dtb"
+    if [ "$BUILD_TYPE_DEFAULT" = "1" ]; then
+        DTS_SRC="$DTS_DEFAULT"
+    elif [ "$BUILD_TYPE_BALANCED" = "1" ]; then
+        DTS_SRC="$DTS_BALANCED"
+    elif [ "$BUILD_TYPE_BATTERY" = "1" ]; then
+        DTS_SRC="$DTS_BATTERY"
+    fi
+    echo -e "\nINFO: Compiling DTS: $DTS_SRC -> $DTB_OUT\n"
+    dtc -I dts -O dtb -o "$DTB_OUT" "$DTS_SRC" >/dev/null 2>&1
+    if [ $? -ne 0 ]; then
+        echo -e "\nERROR: dtc failed to compile $DTS_SRC\n"
+        exit 1
+    fi
+
     cp -rf "$IN_VBOOT"/* "$RAMDISK_DIR/"
 
     # Handle compiled modules
@@ -486,7 +564,7 @@ post_build() {
 
     # Build the images
     echo -e "\nINFO: Building dtb image..."
-    python "$MKDTBOIMG" create "$OUT_DTBIMAGE" --custom0=0x00000000 --custom1=0xff000000 --version=0 --page_size=2048 "$IN_DTB" || exit 1
+    python "$MKDTBOIMG" create "$OUT_DTBIMAGE" --custom0=0x00000000 --custom1=0xff000000 --version=0 --page_size=2048 "$TMPDIR/exynos2100.dtb" || exit 1
 
     echo -e "\nINFO: Building boot image..."
     $MKBOOTIMG --header_version 3 \
