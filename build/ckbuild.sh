@@ -135,7 +135,7 @@ do
         DO_TG=1
     fi
     if [[ "$arg" == *o* ]]; then
-        echo -e "\nINFO: oshi.at argument passed, build will be uploaded to oshi.at"
+        echo -e "\nINFO: bashupload.com argument passed, build will be uploaded to bashupload.com"
         DO_OSHI=1
     fi
     if [[ "$arg" == *l* ]]; then
@@ -411,8 +411,8 @@ post_build() {
         echo -e "\nINFO: Kernel compiled succesfully!...\n"
     else
         echo -e "\nERROR: Kernel files not found! Compilation failed?"
-        echo -e "\nINFO: Uploading log to oshi.at\n"
-        curl -T log.txt oshi.at
+        echo -e "\nINFO: Uploading log to bashupload.com\n"
+        curl -T log.txt bashupload.com
         exit 1
     fi
 
@@ -520,8 +520,8 @@ post_build() {
 upload() {
     cd $KDIR
     if [[ "${DO_OSHI}" = "1" ]]; then
-    echo -e "\nINFO: Uploading to oshi.at\n"
-    curl -T $ZIP_PATH oshi.at; echo
+    echo -e "\nINFO: Uploading to bashupload.com\n"
+    curl -T $ZIP_PATH bashupload.com; echo
     fi
 
     if [[ "${DO_TG}" = "1" ]]; then
@@ -530,8 +530,8 @@ upload() {
             echo "Done!"
     fi
     if [[ "${BUILD_LOG}" = "1" ]]; then
-        echo -e "\nINFO: Uploading log to oshi.at\n"
-        curl -T log.txt oshi.at
+        echo -e "\nINFO: Uploading log to bashupload.com\n"
+        curl -T log.txt bashupload.com
     fi
     # Delete any leftover zip files
     #rm -f $KDIR/build/*zip
