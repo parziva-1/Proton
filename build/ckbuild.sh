@@ -114,7 +114,7 @@ DEVICE="Galaxy S21 Series"
 CODENAME="exynos2100"
 
 ## Parse arguments
-# Valores por defecto
+# Default values
 DO_KSU=0
 DO_CLEAN=0
 DO_MENUCONFIG=0
@@ -195,30 +195,6 @@ case "$BUILD_VARIANT" in
         ;;
     battery)
         BUILD_TYPE_STR="Battery"
-        BUILD_TYPE_BATTERY=1
-        ;;
-    *)
-        echo "Unknown build variant: $BUILD_VARIANT, defaulting to 'default'"
-        BUILD_TYPE_DEFAULT=1
-        ;;
-esac
-
-# Build type variables
-BUILD_TYPE_DEFAULT=1
-BUILD_TYPE_BALANCED=0
-BUILD_TYPE_BATTERY=0
-case "$BUILD_VARIANT" in
-    default)
-        BUILD_TYPE_DEFAULT=1
-        ;;
-    balanced)
-        BUILD_TYPE_STR="Balanced++"
-        BUILD_TYPE_DEFAULT=0
-        BUILD_TYPE_BALANCED=1
-        ;;
-    battery)
-        BUILD_TYPE_STR="Battery"
-        BUILD_TYPE_DEFAULT=0
         BUILD_TYPE_BATTERY=1
         ;;
     *)
