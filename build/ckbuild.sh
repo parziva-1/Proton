@@ -114,54 +114,94 @@ DEVICE="Galaxy S21 Series"
 CODENAME="exynos2100"
 
 ## Parse arguments
+# Valores por defecto
 DO_KSU=0
 DO_CLEAN=0
 DO_MENUCONFIG=0
 IS_RELEASE=0
 DO_TG=0
+DO_OSHI=0
+DO_FLTO=0
+DO_REGEN=0
 DEFCONFIG=$DEFAULT_DEFCONFIG
-# Build type selection
 BUILD_VARIANT="default"
-if [ $# -ge 2 ]; then
-    BUILD_VARIANT="$2"
+
+while [[ "$1" == -* ]]; do
+
+    i=1
+    while [ $i -lt ${#1} ]; do
+        FLAG="${1:$i:1}"
+        case $FLAG in
+            m)
+                echo -e "\nINFO: menuconfig argument passed, kernel configuration menu will be shown..."
+                DO_MENUCONFIG=1
+                ;;
+            k)
+                echo -e "\nINFO: KernelSU argument passed, a KernelSU build will be made..."
+                DO_KSU=1
+                ;;
+            c)
+                echo -e "\nINFO: clean argument passed, output directory will be wiped..."
+                DO_CLEAN=1
+                ;;
+            R)
+                echo -e "\nINFO: Release argument passed, build marked as release"
+                IS_RELEASE=1
+                ;;
+            t)
+                echo -e "\nINFO: Telegram argument passed, build will be uploaded to CI"
+                DO_TG=1
+                ;;
+            o)
+                echo -e "\nINFO: bashupload.com argument passed, build will be uploaded to bashupload.com"
+                DO_OSHI=1
+                ;;
+            l)
+                echo "INFO: Full-LTO argument passed"
+                echo "WARNING: Full-LTO is VERY resource heavy and may take a long time to compile"
+                DO_FLTO=1
+                ;;
+            r)
+                echo "INFO: config regeneration mode"
+                DO_REGEN=1
+                ;;
+            *)
+                echo "ERROR: Unknown flag '$FLAG'"
+                exit 1
+                ;;
+        esac
+        i=$((i + 1))
+    done
+    shift 
+done
+
+if [ -n "$1" ]; then
+    BUILD_VARIANT="$1"
 fi
 
-for arg in "$1"
-do
-    if [[ "$arg" == *m* ]]; then
-        echo -e "\nINFO: menuconfig argument passed, kernel configuration menu will be shown..."
-        DO_MENUCONFIG=1
-    fi
-    if [[ "$arg" == *k* ]]; then
-        echo -e "\nINFO: KernelSU argument passed, a KernelSU build will be made..."
-        DO_KSU=1
-    fi
-    if [[ "$arg" == *c* ]]; then
-        echo -e "\nINFO: clean argument passed, output directory will be wiped..."
-        DO_CLEAN=1
-    fi
-    if [[ "$arg" == *R* ]]; then
-        echo -e "\nINFO: Release argument passed, build marked as release"
-        IS_RELEASE=1
-    fi
-    if [[ "$arg" == *t* ]]; then
-        echo -e "\nINFO: Telegram argument passed, build will be uploaded to CI"
-        DO_TG=1
-    fi
-    if [[ "$arg" == *o* ]]; then
-        echo -e "\nINFO: bashupload.com argument passed, build will be uploaded to bashupload.com"
-        DO_OSHI=1
-    fi
-    if [[ "$arg" == *l* ]]; then
-        echo "INFO: Full-LTO argument passed"
-        echo "WARNING: Full-LTO is VERY resource heavy and may take a long time to compile"
-        DO_FLTO=1
-    fi
-    if [[ "$arg" == *r* ]]; then
-        echo "INFO: config regeneration mode"
-        DO_REGEN=1
-    fi
-done
+# Build type variables
+BUILD_TYPE_DEFAULT=0
+BUILD_TYPE_BALANCED=0
+BUILD_TYPE_BATTERY=0
+BUILD_TYPE_STR=""
+
+case "$BUILD_VARIANT" in
+    default)
+        BUILD_TYPE_DEFAULT=1
+        ;;
+    balanced)
+        BUILD_TYPE_STR="Balanced++"
+        BUILD_TYPE_BALANCED=1
+        ;;
+    battery)
+        BUILD_TYPE_STR="Battery"
+        BUILD_TYPE_BATTERY=1
+        ;;
+    *)
+        echo "Unknown build variant: $BUILD_VARIANT, defaulting to 'default'"
+        BUILD_TYPE_DEFAULT=1
+        ;;
+esac
 
 # Build type variables
 BUILD_TYPE_DEFAULT=1
