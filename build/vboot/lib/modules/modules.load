@@ -4,7 +4,6 @@ exynos-reboot.ko
 exynos-pmu-if.ko
 s3c2410_wdt.ko
 exynos-ecc-handler.ko
-exynos-coresight.ko
 ehld.ko
 hardlockup-debug.ko
 exynos_acpm.ko
