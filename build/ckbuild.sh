@@ -97,7 +97,7 @@ fi
 
 ## Customizable vars
 # Kernel version
-K_VER="v5.3"
+K_VER="v5.3-ExtremeUV++"
 # Toggles
 USE_CCACHE=1
 DO_TAR="1"
