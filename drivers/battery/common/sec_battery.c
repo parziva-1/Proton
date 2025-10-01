@@ -3498,12 +3498,14 @@ static void sec_bat_check_store_mode(struct sec_battery_info *battery)
 		pr_info("%s: capacity(%d), status(%d), store_mode(%d)\n",
 			 __func__, battery->capacity, battery->status, battery->store_mode);
 
-		/* VOTER_STORE_MODE */
-		/* Set limited max power when store mode is set and LDU		*/
-		/* Limited max power should be set with over 5% capacity	*/
-		/* since target could be turned off during boot up		*/
-		/* display test requirement : do not decrease fcc in store mode condition */
-		if (!battery->display_test && battery->store_mode  || !battery->charging_enabled) && battery->capacity >= 5) {
+		/*
+		 * VOTER_STORE_MODE
+		 * Set limited max power when store mode is set and LDU
+		 * Limited max power should be set with over 5% capacity
+		 * since target could be turned off during boot up
+		 * display test requirement : do not decrease fcc in store mode condition
+		 */
+		if (!battery->display_test && (battery->store_mode || !battery->charging_enabled) && battery->capacity >= 5) {
 			sec_vote(battery->input_vote, VOTER_STORE_MODE, true,
 				mA_by_mWmV(battery->pdata->store_mode_max_input_power, battery->input_voltage));
 		}
