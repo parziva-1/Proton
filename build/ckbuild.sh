@@ -244,6 +244,7 @@ elif [[ "$BUILD_TYPE_OC" == "1" ]]; then
 fi
 
 ZIP_PATH="$KDIR/build/ProtonPlus-$K_VER-$FK_TYPE-$CODENAME-$DATE.zip"
+export ZIP_PATH="$KDIR/build/ProtonPlus-$K_VER-$FK_TYPE-$CODENAME-$DATE.zip"
 TAR_PATH="$KDIR/build/ProtonPlus-$K_VER-$FK_TYPE-$CODENAME-$DATE.tar"
 
 echo -e "\nINFO: Build info:
