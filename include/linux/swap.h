@@ -306,25 +306,6 @@ struct vma_swap_readahead {
 #endif
 };
 
-#ifdef CONFIG_64BIT
-#define SWAP_RA_ORDER_CEILING	5
-#else
-/* Avoid stack overflow, because we need to save part of page table */
-#define SWAP_RA_ORDER_CEILING	3
-#define SWAP_RA_PTE_CACHE_SIZE	(1 << SWAP_RA_ORDER_CEILING)
-#endif
-
-struct vma_swap_readahead {
-	unsigned short win;
-	unsigned short offset;
-	unsigned short nr_pte;
-#ifdef CONFIG_64BIT
-	pte_t *ptes;
-#else
-	pte_t ptes[SWAP_RA_PTE_CACHE_SIZE];
-#endif
-};
-
 /* linux/mm/workingset.c */
 void *workingset_eviction(struct page *page);
 void workingset_refault(struct page *page, void *shadow);
@@ -427,7 +408,6 @@ int generic_swapfile_activate(struct swap_info_struct *, struct file *,
 #define SWAP_ADDRESS_SPACE_SHIFT	14
 #define SWAP_ADDRESS_SPACE_PAGES	(1 << SWAP_ADDRESS_SPACE_SHIFT)
 extern struct address_space *swapper_spaces[];
-extern bool swap_vma_readahead;
 #define swap_address_space(entry)			    \
 	(&swapper_spaces[swp_type(entry)][swp_offset(entry) \
 		>> SWAP_ADDRESS_SPACE_SHIFT])
@@ -453,17 +433,6 @@ extern struct page *swap_cluster_readahead(swp_entry_t entry, gfp_t flag,
 				struct vm_fault *vmf);
 extern struct page *swapin_readahead(swp_entry_t entry, gfp_t flag,
 				struct vm_fault *vmf);
-
-extern struct page *swap_readahead_detect(struct vm_fault *vmf,
-					  struct vma_swap_readahead *swap_ra);
-extern struct page *do_swap_page_readahead(swp_entry_t fentry, gfp_t gfp_mask,
-					   struct vm_fault *vmf,
-					   struct vma_swap_readahead *swap_ra);
-
-static inline bool swap_use_vma_readahead(void)
-{
-	return READ_ONCE(swap_vma_readahead);
-}
 
 /* linux/mm/swapfile.c */
 extern atomic_long_t nr_swap_pages;
@@ -583,24 +552,6 @@ static inline struct page *swap_cluster_readahead(swp_entry_t entry,
 
 static inline struct page *swapin_readahead(swp_entry_t swp, gfp_t gfp_mask,
 			struct vm_fault *vmf)
-{
-	return NULL;
-}
-
-static inline bool swap_use_vma_readahead(void)
-{
-	return false;
-}
-
-static inline struct page *swap_readahead_detect(
-	struct vm_fault *vmf, struct vma_swap_readahead *swap_ra)
-{
-	return NULL;
-}
-
-static inline struct page *do_swap_page_readahead(
-	swp_entry_t fentry, gfp_t gfp_mask,
-	struct vm_fault *vmf, struct vma_swap_readahead *swap_ra)
 {
 	return NULL;
 }

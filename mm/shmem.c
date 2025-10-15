@@ -1804,23 +1804,10 @@ repeat:
 	 * bring it back from swap or allocate.
 	 */
 
-	if (swap.val) {
-		/* Look it up and read it in.. */
-		page = lookup_swap_cache(swap, NULL, 0);
-		if (!page) {
-			/* Or update major stats only when swapin succeeds?? */
-			if (fault_type) {
-				*fault_type |= VM_FAULT_MAJOR;
-				count_vm_event(PGMAJFAULT);
-				count_memcg_event_mm(charge_mm, PGMAJFAULT);
-			}
-			/* Here we actually start the io */
-			page = shmem_swapin(swap, gfp, info, index);
-			if (!page) {
-				error = -ENOMEM;
-				goto failed;
-			}
-		}
+	if (vma && userfaultfd_missing(vma)) {
+		*fault_type = handle_userfault(vmf, VM_UFFD_MISSING);
+		return 0;
+	}
 
 	/* shmem_symlink() */
 	if (mapping->a_ops != &shmem_aops)
