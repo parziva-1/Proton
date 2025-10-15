@@ -14,7 +14,6 @@
 #include <linux/delay.h>
 #include <linux/freezer.h>
 #include <linux/sched/signal.h>
-#include <uapi/linux/sched/types.h>
 
 #include "f2fs.h"
 #include "node.h"
@@ -125,7 +124,6 @@ next:
 
 int f2fs_start_gc_thread(struct f2fs_sb_info *sbi)
 {
-	const struct sched_param param = { .sched_priority = 0 };
 	struct f2fs_gc_kthread *gc_th;
 	dev_t dev = sbi->sb->s_bdev->bd_dev;
 	int err = 0;
@@ -152,9 +150,9 @@ int f2fs_start_gc_thread(struct f2fs_sb_info *sbi)
 		kvfree(gc_th);
 		sbi->gc_thread = NULL;
 	}
-	sched_setscheduler(sbi->gc_thread->f2fs_gc_task, SCHED_IDLE, &param);
+
 	set_task_ioprio(sbi->gc_thread->f2fs_gc_task,
-			IOPRIO_PRIO_VALUE(IOPRIO_CLASS_IDLE, 0));
+		IOPRIO_PRIO_VALUE(IOPRIO_CLASS_IDLE, 0));
 out:
 	return err;
 }
@@ -1107,8 +1105,7 @@ next_step:
 
 		if (phase == 3) {
 			inode = f2fs_iget(sb, dni.ino);
-			if (IS_ERR(inode) || is_bad_inode(inode) ||
-					special_file(inode->i_mode)) {
+			if (IS_ERR(inode) || is_bad_inode(inode)) {
 				set_sbi_flag(sbi, SBI_NEED_FSCK);
 				continue;
 			}
@@ -1377,7 +1374,7 @@ gc_more:
 		goto stop;
 	}
 
-	if (gc_type == BG_GC && has_not_enough_free_secs(sbi, 0, 0)) {
+	if (has_not_enough_free_secs(sbi, (gc_type == BG_GC) ? 0 : sec_freed, 0)) {
 		/*
 		 * For example, if there are many prefree_segments below given
 		 * threshold, we can make them free by checkpoint. Then, we
@@ -1389,7 +1386,7 @@ gc_more:
 			if (ret)
 				goto stop;
 		}
-		if (has_not_enough_free_secs(sbi, 0, 0))
+		if (gc_type == BG_GC && has_not_enough_free_secs(sbi, 0, 0))
 			gc_type = FG_GC;
 	}
 

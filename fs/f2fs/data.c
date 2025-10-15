@@ -79,6 +79,9 @@ static bool __is_cp_guaranteed(struct page *page)
 	if (fscrypt_is_bounce_page(page))
 		return false;
 
+	if (f2fs_is_compressed_page(page))
+		return false;
+
 	inode = mapping->host;
 	sbi = F2FS_I_SB(inode);
 
@@ -1002,6 +1005,12 @@ next:
 	     !f2fs_crypt_mergeable_bio(io->bio, fio->page->mapping->host,
 				       fio->page->index, fio)))
 		__submit_merged_bio(io);
+#ifdef CONFIG_DDAR
+	/* DDAR support */
+	if (!fscrypt_dd_can_merge_bio(io->bio, fio->page->mapping)) {
+		__submit_merged_bio(io);
+	}
+#endif
 
 alloc_new:
 	if (io->bio == NULL) {

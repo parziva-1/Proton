@@ -2440,7 +2440,8 @@ find_other_zone:
 		if (dir == ALLOC_RIGHT) {
 			secno = find_next_zero_bit(free_i->free_secmap,
 							MAIN_SECS(sbi), 0);
-			f2fs_bug_on(sbi, secno >= MAIN_SECS(sbi));
+			if (unlikely(secno >= MAIN_SECS(sbi)))
+				goto unlock_bug_on;
 		} else {
 			go_left = 1;
 			left_start = hint - 1;
@@ -2456,7 +2457,9 @@ find_other_zone:
 		}
 		left_start = find_next_zero_bit(free_i->free_secmap,
 							MAIN_SECS(sbi), 0);
-		f2fs_bug_on(sbi, left_start >= MAIN_SECS(sbi));
+		if (unlikely(left_start >= MAIN_SECS(sbi)))
+			goto unlock_bug_on;
+
 		break;
 	}
 	secno = left_start;
@@ -2494,10 +2497,17 @@ skip_left:
 	}
 got_it:
 	/* set it as dirty segment in free segmap */
-	f2fs_bug_on(sbi, test_bit(segno, free_i->free_segmap));
+	if (unlikely(test_bit(segno, free_i->free_segmap)))
+		goto unlock_bug_on;
+
 	__set_inuse(sbi, segno);
 	*newseg = segno;
 	spin_unlock(&free_i->segmap_lock);
+	return;
+
+unlock_bug_on:
+	spin_unlock(&free_i->segmap_lock);
+	f2fs_bug_on(sbi, true);
 }
 
 static void reset_curseg(struct f2fs_sb_info *sbi, int type, int modified)
@@ -2536,7 +2546,7 @@ static unsigned int __get_next_segno(struct f2fs_sb_info *sbi, int type)
 		return SIT_I(sbi)->last_victim[ALLOC_NEXT];
 
 	/* find segments from 0 to reuse freed segments */
-	if (F2FS_OPTION(sbi).alloc_mode == ALLOC_MODE_REUSE)
+	if (f2fs_get_alloc_mode(sbi) == ALLOC_MODE_REUSE)
 		return 0;
 
 	return CURSEG_I(sbi, type)->segno;

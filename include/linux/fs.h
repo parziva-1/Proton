@@ -1417,6 +1417,7 @@ extern int send_sigurg(struct fown_struct *fown);
 #define SB_NODIRATIME   BIT(11)	/* Do not update directory access times */
 #define SB_SILENT       BIT(15)
 #define SB_POSIXACL     BIT(16)	/* VFS does not apply the umask */
+#define SB_INLINECRYPT	BIT(17)	/* Use blk-crypto for encrypted files */
 #define SB_KERNMOUNT    BIT(22)	/* this is a kern_mount call */
 #define SB_I_VERSION    BIT(23)	/* Update inode I_version field */
 #define SB_LAZYTIME     BIT(25)	/* Update the on-disk [acm]times lazily */
@@ -1430,10 +1431,18 @@ extern int send_sigurg(struct fown_struct *fown);
 #define SB_NOUSER       BIT(31)
 
 /* These flags relate to encoding and casefolding */
-#define SB_ENC_STRICT_MODE_FL	(1 << 0)
+#define SB_ENC_STRICT_MODE_FL          (1 << 0)
+#define SB_ENC_NO_COMPAT_FALLBACK_FL   (1 << 1)
 
 #define sb_has_enc_strict_mode(sb) \
 	(sb->s_encoding_flags & SB_ENC_STRICT_MODE_FL)
+
+#if IS_ENABLED(CONFIG_UNICODE)
+#define sb_no_casefold_compat_fallback(sb) \
+       (sb->s_encoding_flags & SB_ENC_NO_COMPAT_FALLBACK_FL)
+#else
+#define sb_no_casefold_compat_fallback(sb) (1)
+#endif
 
 /*
  *	Umount options
