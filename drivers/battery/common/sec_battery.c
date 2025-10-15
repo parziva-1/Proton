@@ -649,7 +649,7 @@ __visible_for_testing bool sec_bat_change_vbus(struct sec_battery_info *battery)
 	if (battery->pdata->chg_temp_check_type == SEC_BATTERY_TEMP_CHECK_NONE)
 		return false;
 
-	if (battery->store_mode ||!battery->charging_enabled ||
+	if (battery->store_mode || !battery->charging_enabled ||
 		((battery->siop_level == 80) && is_wired_type(battery->cable_type)))
 		return false;
 
@@ -1286,7 +1286,7 @@ void sec_bat_set_charging_status(struct sec_battery_info *battery, int status)
 	case POWER_SUPPLY_STATUS_DISCHARGING:
 		if ((battery->status == POWER_SUPPLY_STATUS_FULL ||
 			(battery->capacity == 100 && !is_slate_mode(battery))) &&
-			!battery->store_mode && battery->charging_enabled) {
+			!battery->store_mode && !is_eu_eco_rechg(battery->fs) && battery->charging_enabled) {
 
 			pr_info("%s : Update fg scale to 101%%\n", __func__);
 			value.intval = 100;
@@ -3460,10 +3460,10 @@ static int sec_bat_check_skip_monitor(struct sec_battery_info *battery)
 
 static void sec_bat_check_store_mode(struct sec_battery_info *battery)
 {
-	
+
 	if (sec_bat_get_facmode())
 		return;
-	
+
 #if defined(CONFIG_SEC_FACTORY)
 	if (!is_nocharge_type(battery->cable_type)) {
 #else
@@ -3472,13 +3472,11 @@ static void sec_bat_check_store_mode(struct sec_battery_info *battery)
 		pr_info("%s: capacity(%d), status(%d), store_mode(%d)\n",
 			 __func__, battery->capacity, battery->status, battery->store_mode);
 
-		/*
-		 * VOTER_STORE_MODE
-		 * Set limited max power when store mode is set and LDU
-		 * Limited max power should be set with over 5% capacity
-		 * since target could be turned off during boot up
-		 * display test requirement : do not decrease fcc in store mode condition
-		 */
+		/* VOTER_STORE_MODE */
+		/* Set limited max power when store mode is set and LDU		*/
+		/* Limited max power should be set with over 5% capacity	*/
+		/* since target could be turned off during boot up		*/
+		/* display test requirement : do not decrease fcc in store mode condition */
 		if ((!battery->display_test && battery->store_mode) || (!battery->charging_enabled && battery->capacity >= 5)) {
 			sec_vote(battery->input_vote, VOTER_STORE_MODE, true,
 				mA_by_mWmV(battery->pdata->store_mode_max_input_power, battery->input_voltage));
@@ -3673,6 +3671,7 @@ skip_current_monitor:
 	pr_info("%s: battery->stability_test(%d), battery->eng_not_full_status(%d)\n",
 			__func__, battery->stability_test, battery->eng_not_full_status);
 #endif
+
 
 	if (!is_nocharge_type(battery->cable_type) && !battery->charging_enabled) {
 		int chg_mode;
