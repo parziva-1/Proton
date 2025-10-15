@@ -38,7 +38,6 @@ enum {
 	FAULT_INFO_TYPE,	/* struct f2fs_fault_info */
 #endif
 	RESERVED_BLOCKS,	/* struct f2fs_sb_info */
-	ATGC_INFO,	/* struct atgc_management */
 };
 
 #ifdef CONFIG_F2FS_SEC_BLOCK_OPERATIONS_DEBUG
@@ -52,8 +51,6 @@ const char *sec_blkops_dbg_type_names[NR_F2FS_SEC_DBG_ENTRY] = {
 const char *sec_fua_mode_names[NR_F2FS_SEC_FUA_MODE] = {
 	"NONE",
 	"ROOT",
-	"DIR",
-	"NODE",
 	"ALL",
 };
 
@@ -106,6 +103,13 @@ static ssize_t free_segments_show(struct f2fs_attr *a,
 {
 	return sprintf(buf, "%llu\n",
 			(unsigned long long)(free_segments(sbi)));
+}
+
+static ssize_t ovp_segments_show(struct f2fs_attr *a,
+		struct f2fs_sb_info *sbi, char *buf)
+{
+	return sprintf(buf, "%llu\n",
+			(unsigned long long)(overprovision_segments(sbi)));
 }
 
 static ssize_t lifetime_write_kbytes_show(struct f2fs_attr *a,
@@ -245,29 +249,6 @@ static ssize_t encoding_show(struct f2fs_attr *a,
 			sb->s_encoding->version & 0xff);
 #endif
 	return sprintf(buf, "(none)");
-}
-
-static ssize_t encoding_flags_show(struct f2fs_attr *a,
-		struct f2fs_sb_info *sbi, char *buf)
-{
-	return sysfs_emit(buf, "%x\n",
-		le16_to_cpu(F2FS_RAW_SUPER(sbi)->s_encoding_flags));
-}
-
-static ssize_t effective_lookup_mode_show(struct f2fs_attr *a,
-		struct f2fs_sb_info *sbi, char *buf)
-{
-	switch (f2fs_get_lookup_mode(sbi)) {
-	case LOOKUP_PERF:
-		return sysfs_emit(buf, "perf\n");
-	case LOOKUP_COMPAT:
-		return sysfs_emit(buf, "compat\n");
-	case LOOKUP_AUTO:
-		if (sb_no_casefold_compat_fallback(sbi->sb))
-			return sysfs_emit(buf, "auto:perf\n");
-		return sysfs_emit(buf, "auto:compat\n");
-	}
-	return 0;
 }
 
 static ssize_t mounted_time_sec_show(struct f2fs_attr *a,
@@ -1040,10 +1021,11 @@ static struct f2fs_attr f2fs_attr_##_name = {			\
 #define F2FS_GENERAL_RO_ATTR(name) \
 static struct f2fs_attr f2fs_attr_##name = __ATTR(name, 0444, name##_show, NULL)
 
-#define F2FS_FEATURE_RO_ATTR(_name)				\
+#define F2FS_FEATURE_RO_ATTR(_name, _id)			\
 static struct f2fs_attr f2fs_attr_##_name = {			\
 	.attr = {.name = __stringify(_name), .mode = 0444 },	\
 	.show	= f2fs_feature_show,				\
+	.id	= _id,						\
 }
 
 #define F2FS_STAT_ATTR(_struct_type, _struct_name, _name, _elname)	\
@@ -1115,14 +1097,13 @@ F2FS_RW_ATTR(F2FS_SBI, f2fs_sb_info, sec_fua_mode, s_sec_cond_fua_mode);
 F2FS_RW_ATTR(F2FS_SBI, f2fs_sb_info, sec_hqm_preserve, sec_hqm_preserve);
 F2FS_GENERAL_RO_ATTR(dirty_segments);
 F2FS_GENERAL_RO_ATTR(free_segments);
+F2FS_GENERAL_RO_ATTR(ovp_segments);
 F2FS_GENERAL_RO_ATTR(lifetime_write_kbytes);
 F2FS_GENERAL_RO_ATTR(sec_fs_stat);
 F2FS_GENERAL_RO_ATTR(features);
 F2FS_GENERAL_RO_ATTR(current_reserved_blocks);
 F2FS_GENERAL_RO_ATTR(unusable);
 F2FS_GENERAL_RO_ATTR(encoding);
-F2FS_GENERAL_RO_ATTR(encoding_flags);
-F2FS_GENERAL_RO_ATTR(effective_lookup_mode);
 F2FS_GENERAL_RO_ATTR(mounted_time_sec);
 #ifdef CONFIG_F2FS_STAT_FS
 F2FS_STAT_ATTR(STAT_INFO, f2fs_stat_info, cp_foreground_calls, cp_count);
@@ -1135,47 +1116,37 @@ F2FS_GENERAL_RO_ATTR(avg_vblocks);
 #endif
 
 #ifdef CONFIG_FS_ENCRYPTION
-F2FS_FEATURE_RO_ATTR(encryption);
-F2FS_FEATURE_RO_ATTR(test_dummy_encryption_v2);
+F2FS_FEATURE_RO_ATTR(encryption, FEAT_CRYPTO);
+F2FS_FEATURE_RO_ATTR(test_dummy_encryption_v2, FEAT_TEST_DUMMY_ENCRYPTION_V2);
 #ifdef CONFIG_UNICODE
-F2FS_FEATURE_RO_ATTR(encrypted_casefold);
+F2FS_FEATURE_RO_ATTR(encrypted_casefold, FEAT_ENCRYPTED_CASEFOLD);
 #endif
 #endif /* CONFIG_FS_ENCRYPTION */
 #ifdef CONFIG_BLK_DEV_ZONED
-F2FS_FEATURE_RO_ATTR(block_zoned);
+F2FS_FEATURE_RO_ATTR(block_zoned, FEAT_BLKZONED);
 #endif
-F2FS_FEATURE_RO_ATTR(atomic_write);
-F2FS_FEATURE_RO_ATTR(extra_attr);
-F2FS_FEATURE_RO_ATTR(project_quota);
-F2FS_FEATURE_RO_ATTR(inode_checksum);
-F2FS_FEATURE_RO_ATTR(flexible_inline_xattr);
-F2FS_FEATURE_RO_ATTR(quota_ino);
-F2FS_FEATURE_RO_ATTR(inode_crtime);
-F2FS_FEATURE_RO_ATTR(lost_found);
+F2FS_FEATURE_RO_ATTR(atomic_write, FEAT_ATOMIC_WRITE);
+F2FS_FEATURE_RO_ATTR(extra_attr, FEAT_EXTRA_ATTR);
+F2FS_FEATURE_RO_ATTR(project_quota, FEAT_PROJECT_QUOTA);
+F2FS_FEATURE_RO_ATTR(inode_checksum, FEAT_INODE_CHECKSUM);
+F2FS_FEATURE_RO_ATTR(flexible_inline_xattr, FEAT_FLEXIBLE_INLINE_XATTR);
+F2FS_FEATURE_RO_ATTR(quota_ino, FEAT_QUOTA_INO);
+F2FS_FEATURE_RO_ATTR(inode_crtime, FEAT_INODE_CRTIME);
+F2FS_FEATURE_RO_ATTR(lost_found, FEAT_LOST_FOUND);
 #ifdef CONFIG_FS_VERITY
-F2FS_FEATURE_RO_ATTR(verity);
+F2FS_FEATURE_RO_ATTR(verity, FEAT_VERITY);
 #endif
-F2FS_FEATURE_RO_ATTR(sb_checksum);
+F2FS_FEATURE_RO_ATTR(sb_checksum, FEAT_SB_CHECKSUM);
 #ifdef CONFIG_UNICODE
-F2FS_FEATURE_RO_ATTR(casefold);
+F2FS_FEATURE_RO_ATTR(casefold, FEAT_CASEFOLD);
 #endif
-F2FS_FEATURE_RO_ATTR(readonly);
+F2FS_FEATURE_RO_ATTR(readonly, FEAT_RO);
 #ifdef CONFIG_F2FS_FS_COMPRESSION
-F2FS_FEATURE_RO_ATTR(compression);
+F2FS_FEATURE_RO_ATTR(compression, FEAT_COMPRESSION);
 #endif
 #ifdef CONFIG_F2FS_SEC_SUPPORT_DNODE_RELOCATION
-F2FS_FEATURE_RO_ATTR(sec_dnode_relocation);
+F2FS_FEATURE_RO_ATTR(sec_dnode_relocation, FEAT_SEC_DNODE_RELOCATION);
 #endif
-F2FS_FEATURE_RO_ATTR(pin_file);
-#ifdef CONFIG_UNICODE
-F2FS_FEATURE_RO_ATTR(linear_lookup);
-#endif
-
-/* For ATGC */
-F2FS_RW_ATTR(ATGC_INFO, atgc_management, atgc_candidate_ratio, candidate_ratio);
-F2FS_RW_ATTR(ATGC_INFO, atgc_management, atgc_candidate_count, max_candidate_count);
-F2FS_RW_ATTR(ATGC_INFO, atgc_management, atgc_age_weight, age_weight);
-F2FS_RW_ATTR(ATGC_INFO, atgc_management, atgc_age_threshold, age_threshold);
 
 #define ATTR_LIST(name) (&f2fs_attr_##name.attr)
 static struct attribute *f2fs_attrs[] = {
@@ -1214,13 +1185,6 @@ static struct attribute *f2fs_attrs[] = {
 	ATTR_LIST(extension_list),
 	ATTR_LIST(sec_gc_stat),
 	ATTR_LIST(sec_io_stat),
-static struct attribute *f2fs_atgc_info_attrs[] = {
-    &f2fs_attr_atgc_candidate_ratio.attr,
-    &f2fs_attr_atgc_candidate_count.attr,
-    &f2fs_attr_atgc_age_weight.attr,
-    &f2fs_attr_atgc_age_threshold.attr,
-    NULL,   /* Terminator */
-};
 #ifdef CONFIG_F2FS_SEC_DEBUG_NODE
 	ATTR_LIST(sec_stats),
 #endif
@@ -1243,6 +1207,7 @@ static struct attribute *f2fs_atgc_info_attrs[] = {
 	ATTR_LIST(node_io_flag),
 	ATTR_LIST(dirty_segments),
 	ATTR_LIST(free_segments),
+	ATTR_LIST(ovp_segments),
 	ATTR_LIST(unusable),
 	ATTR_LIST(lifetime_write_kbytes),
 	ATTR_LIST(sec_fs_stat),
@@ -1250,8 +1215,6 @@ static struct attribute *f2fs_atgc_info_attrs[] = {
 	ATTR_LIST(reserved_blocks),
 	ATTR_LIST(current_reserved_blocks),
 	ATTR_LIST(encoding),
-	ATTR_LIST(encoding_flags),
-	ATTR_LIST(effective_lookup_mode),
 	ATTR_LIST(mounted_time_sec),
 #ifdef CONFIG_F2FS_STAT_FS
 	ATTR_LIST(cp_foreground_calls),
@@ -1298,10 +1261,6 @@ static struct attribute *f2fs_feat_attrs[] = {
 #endif
 #ifdef CONFIG_F2FS_SEC_SUPPORT_DNODE_RELOCATION
 	ATTR_LIST(sec_dnode_relocation),
-#endif
-	ATTR_LIST(pin_file),
-#ifdef CONFIG_UNICODE
-	ATTR_LIST(linear_lookup),
 #endif
 	NULL,
 };

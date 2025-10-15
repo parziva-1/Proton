@@ -1306,17 +1306,17 @@ struct task_struct {
 	ANDROID_KABI_RESERVE(4);
 	ANDROID_KABI_RESERVE(5);
 	ANDROID_KABI_RESERVE(6);
+#ifdef CONFIG_KSU_SUSFS
+	ANDROID_KABI_USE(7, u64 susfs_task_state);
+#else
 	ANDROID_KABI_RESERVE(7);
+#endif
 	ANDROID_KABI_RESERVE(8);
 
 	/*
 	 * New fields for task_struct should be added above here, so that
 	 * they are included in the randomized portion of task_struct.
 	 */
-#ifdef CONFIG_KSU_SUSFS
-	u64 susfs_task_state;
-	u64 susfs_last_fake_mnt_id;
-#endif
 	randomized_struct_fields_end
 
 	/* CPU-specific state of this task: */
@@ -1629,6 +1629,11 @@ static inline int set_cpus_allowed_ptr(struct task_struct *p, const struct cpuma
 	return 0;
 }
 #endif
+
+void sched_migrate_to_cpumask_start(struct cpumask *old_mask,
+				    const struct cpumask *dest);
+void sched_migrate_to_cpumask_end(const struct cpumask *old_mask,
+				  const struct cpumask *dest);
 
 extern int yield_to(struct task_struct *p, bool preempt);
 extern void set_user_nice(struct task_struct *p, long nice);

@@ -7,7 +7,7 @@
 
 ## Vars
 # Toolchains
-AOSP_REPO="https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+/refs/heads/main/clang-r547379/"
+AOSP_REPO="https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+/refs/heads/master"
 AOSP_ARCHIVE="https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/master"
 PC_REPO="https://github.com/kdrag0n/proton-clang"
 LZ_REPO="https://gitlab.com/Jprimero15/lolz_clang.git"
@@ -97,7 +97,7 @@ fi
 
 ## Customizable vars
 # Kernel version
-K_VER="Special"
+K_VER="v5.5"
 # Toggles
 USE_CCACHE=1
 DO_TAR="1"
@@ -192,11 +192,11 @@ case "$BUILD_VARIANT" in
         BUILD_TYPE_DEFAULT=1
         ;;
     balanced)
-        BUILD_TYPE_STR="Balanced-Edition-UV++"
+        BUILD_TYPE_STR="Balanced"
         BUILD_TYPE_BALANCED=1
         ;;
     battery)
-        BUILD_TYPE_STR="Battery-Edition-UV++"
+        BUILD_TYPE_STR="Battery"
         BUILD_TYPE_BATTERY=1
         ;;
     oc)
@@ -413,15 +413,15 @@ build() {
     fi
 
     if [ "$BUILD_TYPE_BALANCED" == "1" ]; then
-        scripts/config --file "$KDIR/out/.config" --set-val CONFIG_SOC_EXYNOS2100_CL0_UV 7
-        scripts/config --file "$KDIR/out/.config" --set-val CONFIG_SOC_EXYNOS2100_CL1_UV 7
-        scripts/config --file "$KDIR/out/.config" --set-val CONFIG_SOC_EXYNOS2100_CL2_UV 7
+        scripts/config --file "$KDIR/out/.config" --set-val CONFIG_SOC_EXYNOS2100_CL0_UV 4
+        scripts/config --file "$KDIR/out/.config" --set-val CONFIG_SOC_EXYNOS2100_CL1_UV 4
+        scripts/config --file "$KDIR/out/.config" --set-val CONFIG_SOC_EXYNOS2100_CL2_UV 3
     fi
 
     if [ "$BUILD_TYPE_BATTERY" == "1" ]; then
-        scripts/config --file "$KDIR/out/.config" --set-val CONFIG_SOC_EXYNOS2100_CL0_UV 7
-        scripts/config --file "$KDIR/out/.config" --set-val CONFIG_SOC_EXYNOS2100_CL1_UV 7
-        scripts/config --file "$KDIR/out/.config" --set-val CONFIG_SOC_EXYNOS2100_CL2_UV 7
+        scripts/config --file "$KDIR/out/.config" --set-val CONFIG_SOC_EXYNOS2100_CL0_UV 5
+        scripts/config --file "$KDIR/out/.config" --set-val CONFIG_SOC_EXYNOS2100_CL1_UV 4
+        scripts/config --file "$KDIR/out/.config" --set-val CONFIG_SOC_EXYNOS2100_CL2_UV 4
     fi
 
     if [ "$BUILD_TYPE_OC" == "1" ]; then

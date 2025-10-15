@@ -12,7 +12,6 @@
 #ifdef CONFIG_SECCOMP
 
 #include <linux/thread_info.h>
-#include <linux/atomic.h>
 #include <asm/seccomp.h>
 
 struct seccomp_filter;
@@ -21,7 +20,6 @@ struct seccomp_filter;
  *
  * @mode:  indicates one of the valid values above for controlled
  *         system calls available to a process.
- * @filter_count: number of seccomp filters
  * @filter: must always point to a valid seccomp-filter or NULL as it is
  *          accessed without locking during system call entry.
  *
@@ -30,7 +28,6 @@ struct seccomp_filter;
  */
 struct seccomp {
 	int mode;
-	atomic_t filter_count;
 	struct seccomp_filter *filter;
 };
 

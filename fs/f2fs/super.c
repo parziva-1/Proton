@@ -158,11 +158,6 @@ enum {
 	Opt_compress_extension,
 	Opt_compress_chksum,
 	Opt_compress_mode,
-	Opt_compress_cache,
-	Opt_atgc,
-	Opt_gc_merge,
-	Opt_nogc_merge,
-	Opt_lookup_mode,
 	Opt_err,
 };
 
@@ -234,11 +229,6 @@ static match_table_t f2fs_tokens = {
 	{Opt_compress_extension, "compress_extension=%s"},
 	{Opt_compress_chksum, "compress_chksum"},
 	{Opt_compress_mode, "compress_mode=%s"},
-	{Opt_compress_cache, "compress_cache"},
-	{Opt_atgc, "atgc"},
-	{Opt_gc_merge, "gc_merge"},
-	{Opt_nogc_merge, "nogc_merge"},
-	{Opt_lookup_mode, "lookup_mode=%s"},
 	{Opt_err, NULL},
 };
 
@@ -979,9 +969,9 @@ static int parse_options(struct super_block *sb, char *options, bool is_remount)
 				return -ENOMEM;
 
 			if (!strcmp(name, "default")) {
-				f2fs_set_alloc_mode(sbi, ALLOC_MODE_DEFAULT);
+				F2FS_OPTION(sbi).alloc_mode = ALLOC_MODE_DEFAULT;
 			} else if (!strcmp(name, "reuse")) {
-				f2fs_set_alloc_mode(sbi, ALLOC_MODE_REUSE);
+				F2FS_OPTION(sbi).alloc_mode = ALLOC_MODE_REUSE;
 			} else {
 				kvfree(name);
 				return -EINVAL;
@@ -1140,33 +1130,6 @@ static int parse_options(struct super_block *sb, char *options, bool is_remount)
 			f2fs_info(sbi, "compression options not supported");
 			break;
 #endif
-		case Opt_atgc:
-			set_opt(sbi, ATGC);
-			break;
-		case Opt_gc_merge:
-			set_opt(sbi, GC_MERGE);
-			break;
-		case Opt_nogc_merge:
-			clear_opt(sbi, GC_MERGE);
-			break;
-
-		case Opt_lookup_mode:
-			name = match_strdup(&args[0]);
-			if (!name)
-				return -ENOMEM;
-			if (!strcmp(name, "perf")) {
-				f2fs_set_lookup_mode(sbi, LOOKUP_PERF);
-			} else if (!strcmp(name, "compat")) {
-				f2fs_set_lookup_mode(sbi, LOOKUP_COMPAT);
-			} else if (!strcmp(name, "auto")) {
-				f2fs_set_lookup_mode(sbi, LOOKUP_AUTO);
-			} else {
-				kfree(name);
-				return -EINVAL;
-			}
-			kfree(name);
-			break;
-
 		default:
 			f2fs_err(sbi, "Unrecognized mount option \"%s\" or missing value",
 				 p);
@@ -1882,9 +1845,9 @@ static int f2fs_show_options(struct seq_file *seq, struct dentry *root)
 		seq_puts(seq, ",inlinecrypt");
 #endif
 
-	if (f2fs_get_alloc_mode(sbi) == ALLOC_MODE_DEFAULT)
+	if (F2FS_OPTION(sbi).alloc_mode == ALLOC_MODE_DEFAULT)
 		seq_printf(seq, ",alloc_mode=%s", "default");
-	else if (f2fs_get_alloc_mode(sbi) == ALLOC_MODE_REUSE)
+	else if (F2FS_OPTION(sbi).alloc_mode == ALLOC_MODE_REUSE)
 		seq_printf(seq, ",alloc_mode=%s", "reuse");
 
 	if (test_opt(sbi, DISABLE_CHECKPOINT))
@@ -1906,17 +1869,6 @@ static int f2fs_show_options(struct seq_file *seq, struct dentry *root)
 #ifdef CONFIG_F2FS_FS_COMPRESSION
 	f2fs_show_compress_options(seq, sbi->sb);
 #endif
-
-	if (test_opt(sbi, ATGC))
-		seq_puts(seq, ",atgc");
-
-	if (f2fs_get_lookup_mode(sbi) == LOOKUP_PERF)
-		seq_show_option(seq, "lookup_mode", "perf");
-	else if (f2fs_get_lookup_mode(sbi) == LOOKUP_COMPAT)
-		seq_show_option(seq, "lookup_mode", "compat");
-	else if (f2fs_get_lookup_mode(sbi) == LOOKUP_AUTO)
-		seq_show_option(seq, "lookup_mode", "auto");
-
 	return 0;
 }
 
@@ -1932,11 +1884,6 @@ static void default_options(struct f2fs_sb_info *sbi, bool remount)
 	F2FS_OPTION(sbi).inline_xattr_size = DEFAULT_INLINE_XATTR_ADDRS;
 	F2FS_OPTION(sbi).whint_mode = WHINT_MODE_OFF;
 	F2FS_OPTION(sbi).alloc_mode = ALLOC_MODE_DEFAULT;
-	if (le32_to_cpu(F2FS_RAW_SUPER(sbi)->segment_count_main) <=
-							SMALL_VOLUME_SEGMENTS)
-		f2fs_set_alloc_mode(sbi, ALLOC_MODE_REUSE);
-	else
-		f2fs_set_alloc_mode(sbi, ALLOC_MODE_DEFAULT);
 	F2FS_OPTION(sbi).fsync_mode = FSYNC_MODE_POSIX;
 #ifdef CONFIG_FS_ENCRYPTION
 	F2FS_OPTION(sbi).inlinecrypt = false;
@@ -1981,7 +1928,20 @@ static void default_options(struct f2fs_sb_info *sbi, bool remount)
 
 	f2fs_build_fault_attr(sbi, 0, 0);
 
-	f2fs_set_lookup_mode(sbi, LOOKUP_PERF);
+	if (sbi->raw_super->mount_opts[0]) {
+		struct super_block *sb = sbi->sb;
+		int err;
+		char *mount_opts = kstrndup(sbi->raw_super->mount_opts,
+				sizeof(sbi->raw_super->mount_opts),
+				GFP_KERNEL);
+		if (!mount_opts)
+			return;
+		err = parse_options(sb, mount_opts, remount);
+		if (err)
+			f2fs_warn(sbi,
+				"failed to parse options in superblock\n");
+		kfree(mount_opts);
+	}
 }
 
 #ifdef CONFIG_QUOTA

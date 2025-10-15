@@ -246,7 +246,7 @@ extern unsigned long get_cable_type(struct otg_notify *n);
 extern int is_usb_host(struct otg_notify *n);
 extern bool is_blocked(struct otg_notify *n, int type);
 extern bool is_snkdfp_usb_device_connected(struct otg_notify *n);
-extern void set_con_dev_hub(struct otg_notify *n, int speed, int conn);		
+extern void set_con_dev_hub(struct otg_notify *n, int speed, int conn);
 extern int is_known_usbaudio(struct usb_device *dev);
 extern void set_usb_audio_cardnum(int card_num, int bundle, int attach);
 extern void send_usb_audio_uevent(struct usb_device *dev,
@@ -311,7 +311,7 @@ static inline int is_usb_host(struct otg_notify *n) {return 0; }
 static inline bool is_blocked(struct otg_notify *n, int type) {return false; }
 static inline bool is_snkdfp_usb_device_connected(struct otg_notify *n)
 			{return false; }
-static inline void set_con_dev_hub(struct otg_notify *n, int speed, int conn) {}		
+static inline void set_con_dev_hub(struct otg_notify *n, int speed, int conn) {}
 static inline int is_known_usbaudio(struct usb_device *dev) {return 0; }
 static inline void set_usb_audio_cardnum(int card_num,
 		int bundle, int attach) {}
