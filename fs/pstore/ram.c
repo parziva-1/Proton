@@ -885,7 +885,6 @@ fail_clear:
 	cxt->pstore.bufsize = 0;
 	persistent_ram_free(cxt->mprz);
 fail_init_mprz:
-	persistent_ram_free(cxt->fprz);
 fail_init_fprz:
 	persistent_ram_free(cxt->cprz);
 fail_init_cprz:
