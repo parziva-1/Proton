@@ -263,16 +263,35 @@ get_toolchain() {
     # AOSP Clang
     if [[ $1 = "aosp" ]]; then
         if ! [ -d "$AC_DIR" ]; then
-        CURRENT_CLANG=$(curl $AOSP_REPO | grep -oE "clang-r[0-9a-f]+" | sort -u | tail -n1)
-            echo -e "\nINFO: AOSP Clang not found! Cloning to $AC_DIR..."
-            if ! curl -LSsO "$AOSP_ARCHIVE/$CURRENT_CLANG.tar.gz"; then
-                echo -e "\nERROR: Cloning failed! Aborting..."
+            # --- MODIFICATION START ---
+            # Hardcode the specific AOSP Clang version and URL
+            AOSP_CLANG_VERSION="clang-r563880"
+            AOSP_CLANG_URL="https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/mirror-goog-main-llvm-toolchain-source/clang-r563880.tar.gz"
+            AOSP_CLANG_TARBALL="${AOSP_CLANG_VERSION}.tar.gz"
+
+            echo -e "\nINFO: AOSP Clang not found! Downloading specific version ($AOSP_CLANG_VERSION)..."
+            
+            # Download the specified version
+            if ! curl -Lo "$AOSP_CLANG_TARBALL" "$AOSP_CLANG_URL"; then
+                echo -e "\nERROR: Downloading $AOSP_CLANG_URL failed! Aborting..."
                 exit 1
             fi
-            mkdir -p $AC_DIR && tar -xf ./*.tar.gz -C $AC_DIR && rm ./*.tar.gz && rm -rf clang
-            touch $AC_DIR/bin/aarch64-linux-gnu-elfedit && chmod +x $AC_DIR/bin/aarch64-linux-gnu-elfedit
-            touch $AC_DIR/bin/arm-linux-gnueabi-elfedit && chmod +x $AC_DIR/bin/arm-linux-gnueabi-elfedit
-            rm -rf $CURRENT_CLANG
+
+            # Extract the toolchain
+            mkdir -p "$AC_DIR"
+            echo -e "\nINFO: Extracting toolchain..."
+            if ! tar -xf "$AOSP_CLANG_TARBALL" -C "$AC_DIR"; then
+                echo -e "\nERROR: Failed to extract $AOSP_CLANG_TARBALL! Aborting..."
+                exit 1
+            fi
+
+            # Clean up the downloaded tarball
+            rm -f "$AOSP_CLANG_TARBALL"
+
+            # Compatibility fixes from original script
+            touch "$AC_DIR/bin/aarch64-linux-gnu-elfedit" && chmod +x "$AC_DIR/bin/aarch64-linux-gnu-elfedit"
+            touch "$AC_DIR/bin/arm-linux-gnueabi-elfedit" && chmod +x "$AC_DIR/bin/arm-linux-gnueabi-elfedit"
+            # --- MODIFICATION END ---
         fi
     fi
 
