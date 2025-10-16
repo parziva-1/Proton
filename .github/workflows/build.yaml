@@ -23,7 +23,7 @@ jobs:
       - name: Build with -tlcRk
         run: |
           export WP="$(realpath $PWD/../)"
-          bash build/ckbuild.sh -tlcRk
+          bash build/ckbuild.sh -tcRk
           echo "ZIP_PATH_K=$ZIP_PATH" >> $GITHUB_ENV
           cp "$ZIP_PATH" ../kernel-build-k.zip
 
@@ -36,7 +36,7 @@ jobs:
       - name: Build with -tlcR
         run: |
           export WP="$(realpath $PWD/../)"
-          bash build/ckbuild.sh -tlcR
+          bash build/ckbuild.sh -tcR
           echo "ZIP_PATH_NOK=$ZIP_PATH" >> $GITHUB_ENV
           cp "$ZIP_PATH" ../kernel-build-nok.zip
 
