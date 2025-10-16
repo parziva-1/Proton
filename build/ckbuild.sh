@@ -647,19 +647,10 @@ post_build() {
 
 upload() {
     cd $KDIR
-    if [[ "${DO_OSHI}" = "1" ]]; then
-    echo -e "\nINFO: Uploading to bashupload.com\n"
-    curl -T $ZIP_PATH bashupload.com; echo
-    fi
-
     if [[ "${DO_TG}" = "1" ]]; then
             echo -e "\nINFO: Uploading to Telegram\n"
             tgs $ZIP_PATH
             echo "Done!"
-    fi
-    if [[ "${BUILD_LOG}" = "1" ]]; then
-        echo -e "\nINFO: Uploading log to bashupload.com\n"
-        curl -T log.txt bashupload.com
     fi
     # Delete any leftover zip files
     #rm -f $KDIR/build/*zip
