@@ -3469,7 +3469,7 @@
 		gpu_inter_frame_dynamic_freq = <767000>;
 		gpu_perf_gathering = <0>;
 		gpu_runtime_pm_delay_time = <50>;
-		gpu_dvfs_polling_time = <30>;
+		gpu_dvfs_polling_time = <20>;
 		gpu_weight_table_idx_0 = <5>;
 		gpu_weight_table_idx_1 = <5>;
 		gpu_interactive_fix = <0>;
@@ -3488,7 +3488,7 @@
 		gpu_sustainable_clock = <676000>;
 		gpu_bts_support = <1>;
 		gpu_heavy_compute_cpu0_min_clock = <2210000>;
-		gpu_heavy_compute_vk_cpu0_min_clock = <2002000>;
+		gpu_heavy_compute_vk_cpu0_min_clock = <2210000>;
 		phandle = <408>;
 	};
 
