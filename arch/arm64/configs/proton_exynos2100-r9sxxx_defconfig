@@ -1,8 +1,8 @@
 #
 # Automatically generated file; DO NOT EDIT.
-# Linux/arm64 5.4.300 Kernel Configuration
+# Linux/arm64 5.4.301 Kernel Configuration
 #
-CONFIG_CC_VERSION_TEXT="Android (13688100, +pgo, +bolt, +lto, +mlgo, based on r563880) clang version 21.0.0 (https://android.googlesource.com/toolchain/llvm-project 5e96669f06077099aa41290cdb4c5e6fa0f59349)"
+CONFIG_CC_VERSION_TEXT="Android (13783749, +pgo, +bolt, +lto, +mlgo, based on r563880) clang version 21.0.0 (https://android.googlesource.com/toolchain/llvm-project 5e96669f06077099aa41290cdb4c5e6fa0f59349)"
 CONFIG_GCC_VERSION=0
 CONFIG_CC_IS_CLANG=y
 CONFIG_LD_IS_LLD=y
@@ -1286,9 +1286,7 @@ CONFIG_NET_SCH_DEFAULT=y
 CONFIG_DEFAULT_FQ_CODEL=y
 # CONFIG_DEFAULT_PFIFO_FAST is not set
 CONFIG_DEFAULT_NET_SCH="fq_codel"
-CONFIG_SMB_SERVER=y
-# CONFIG_SMB_INSECURE_SERVER is not set
-CONFIG_SMB_SERVER_CHECK_CAP_NET_ADMIN=y
+
 #
 # Classification
 #
