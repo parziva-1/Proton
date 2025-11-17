@@ -233,8 +233,8 @@ struct bpf_call_arg_meta {
 	bool pkt_access;
 	int regno;
 	int access_size;
-	int mem_size;
-	u64 msize_max_value;
+	s64 msize_smax_value;
+	u64 msize_umax_value;
 	int ref_obj_id;
 	int func_id;
 	u32 btf_id;
@@ -4708,7 +4708,8 @@ static int check_func_arg(struct bpf_verifier_env *env, u32 arg,
 		 * out. Only upper bounds can be learned because retval is an
 		 * int type and negative retvals are allowed.
 		 */
-		meta->msize_max_value = reg->umax_value;
+		meta->msize_smax_value = reg->smax_value;
+		meta->msize_umax_value = reg->umax_value;
 
 		/* The register is SCALAR_VALUE; the access check
 		 * happens using its boundaries.
@@ -5323,16 +5324,13 @@ static void do_refine_retval_range(struct bpf_reg_state *regs, int ret_type,
 
 	if (ret_type != RET_INTEGER ||
 	    (func_id != BPF_FUNC_get_stack &&
-	     func_id != BPF_FUNC_probe_read_str &&
-	     func_id != BPF_FUNC_probe_read_kernel_str &&
-	     func_id != BPF_FUNC_probe_read_user_str))
+	     func_id != BPF_FUNC_probe_read_str))
 		return;
 
-	ret_reg->smax_value = meta->msize_max_value;
-	ret_reg->s32_max_value = meta->msize_max_value;
-	ret_reg->smin_value = -MAX_ERRNO;
-	ret_reg->s32_min_value = -MAX_ERRNO;
-	reg_bounds_sync(ret_reg);
+	ret_reg->smax_value = meta->msize_smax_value;
+	ret_reg->umax_value = meta->msize_umax_value;
+	__reg_deduce_bounds(ret_reg);
+	__reg_bound_offset(ret_reg);
 }
 
 static int
