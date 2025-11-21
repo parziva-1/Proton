@@ -450,11 +450,15 @@ static struct sock *udp4_lib_lookup2(struct net *net,
 		score = compute_score(sk, net, saddr, sport,
 				      daddr, hnum, dif, sdif);
 		if (score > badness) {
-			result = lookup_reuseport(net, sk, skb,
-						  saddr, sport, daddr, hnum);
-			if (result)
-				return result;
-
+			if (sk->sk_reuseport &&
+			    sk->sk_state != TCP_ESTABLISHED) {
+				hash = udp_ehashfn(net, daddr, hnum,
+						   saddr, sport);
+				result = reuseport_select_sock(sk, hash, skb,
+							sizeof(struct udphdr));
+				if (result && !reuseport_has_conns(sk, false))
+					return result;
+			}
 			badness = score;
 			result = sk;
 		}
