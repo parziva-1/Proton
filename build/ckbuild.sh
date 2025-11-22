@@ -82,7 +82,7 @@ DTS_BATTERY="$KDIR/arch/arm64/boot/dts/exynos/exynos2100_battery.dts"
 DTS_OC="$KDIR/arch/arm64/boot/dts/exynos/exynos2100_oc.dts"
 
 # Dependencies
-UB_DEPLIST="lz4 brotli flex bc cpio kmod ccache zip binutils-aarch64-linux-gnu device-tree-compiler"
+UB_DEPLIST=" make bison libssl-dev curl lz4 brotli flex bc cpio kmod ccache zip binutils-aarch64-linux-gnu device-tree-compiler"
 if grep -q "Ubuntu" /etc/os-release; then
     sudo apt install $UB_DEPLIST -y
 else
