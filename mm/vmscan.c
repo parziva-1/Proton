@@ -64,6 +64,8 @@
 
 #include "internal.h"
 
+#include <linux/magic.h>
+
 #define CREATE_TRACE_POINTS
 #include <trace/events/vmscan.h>
 
@@ -1759,6 +1761,15 @@ static __always_inline void update_lru_sizes(struct lruvec *lruvec,
 		update_lru_size(lruvec, lru, zid, -nr_zone_taken[zid]);
 	}
 
+}
+
+/*
+ * Helper function for MGLRU on Kernel 5.4
+ * Checks if the mapping belongs to shared memory (tmpfs)
+ */
+static bool shmem_mapping(struct address_space *mapping)
+{
+    return mapping->host && mapping->host->i_sb->s_magic == TMPFS_MAGIC;
 }
 
 #ifdef CONFIG_CMA
