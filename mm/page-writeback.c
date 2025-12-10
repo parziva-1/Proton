@@ -89,11 +89,7 @@ int vm_highmem_is_dirtyable;
 /*
  * The generator of dirty data starts writeback at this percentage
  */
-<<<<<<< HEAD
-int vm_dirty_ratio = 80;
-=======
 int vm_dirty_ratio;
->>>>>>> f1811ef5ab2b (mm: Tune dirty data writebacks)
 
 /*
  * vm_dirty_bytes starts at 0 (disabled) so that it is a function of
