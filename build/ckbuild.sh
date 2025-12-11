@@ -13,7 +13,7 @@ PC_REPO="https://github.com/kdrag0n/proton-clang"
 LZ_REPO="https://gitlab.com/Jprimero15/lolz_clang.git"
 
 # Other
-DEFAULT_DEFCONFIG="proton_exynos2100-r9sxxx_defconfig"
+DEFAULT_DEFCONFIG="proton_defconfig"
 KERNEL_URL="https://github.com/ProtonKernel/Proton"
 AK3_URL="https://github.com/ProtonKernel/AnyKernel3"
 AK3_TEST=0
