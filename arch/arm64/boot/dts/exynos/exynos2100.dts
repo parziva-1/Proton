@@ -19891,7 +19891,7 @@
 				};
 
 				big-control-temp {
-					temperature = <0x11170>;
+					temperature = <0x13880>;
 					hysteresis = <0x1388>;
 					type = "passive";
 					phandle = <0x187>;
@@ -19966,7 +19966,7 @@
 				};
 
 				mid-control-temp {
-					temperature = <0x11170>;
+					temperature = <0x1388>;
 					hysteresis = <0x1388>;
 					type = "passive";
 					phandle = <0x18a>;
@@ -20151,7 +20151,7 @@
 				};
 
 				gpu-control-temp {
-					temperature = <0x11170>;
+					temperature = <0x124F8>;
 					hysteresis = <0x1388>;
 					type = "passive";
 					phandle = <0x197>;
