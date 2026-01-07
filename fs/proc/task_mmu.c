@@ -1195,7 +1195,7 @@ static int show_smap(struct seq_file *m, void *v)
 	}
 #endif
 
-show_pad:
+// show_pad:
 	show_map_pad_vma(vma, m, show_smap_vma, true);
 
 	m_cache_vma(m, v);
