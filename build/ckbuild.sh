@@ -350,8 +350,6 @@ CAPTION_BUILD="Build info:
 *Device*: \`${DEVICE} [${CODENAME}]\`
 *Kernel Version*: \`${LINUX_VER}\`
 *Compiler*: \`${KBUILD_COMPILER_STRING}\`
-*Linker*: \`$("$CLANG_DIR"/bin/${LINKER} -v | head -n1 | sed 's/(compatible with [^)]*)//' |
-            head -n 1 | perl -pe 's/\(http.*?\)//gs' | sed -e 's/  */ /g' -e 's/[[:space:]]*$//')\`
 *Build host*: \`${BUILD_HOST}\`
 *Branch*: \`$(git rev-parse --abbrev-ref HEAD)\`
 *Commit*: [($(git rev-parse HEAD | cut -c -7))]($(echo $KERNEL_URL)/commit/$(git rev-parse HEAD))
