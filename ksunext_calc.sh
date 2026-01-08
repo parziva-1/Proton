@@ -83,7 +83,7 @@ fi
 if [ -e .git ]; then
   KSU_GIT_VERSION=$(git rev-list --count HEAD)
   # ksu_version: major * 10000 + git version
-  KSU_VERSION=$((30000 + KSU_GIT_VERSION))
+  KSU_VERSION=$((30000 + KSU_GIT_VERSION + 60))
   echo "-- KernelSU-Next version: $KSU_VERSION"
   
   # Update kernel build flags: prefer Makefile, but fall back to Kbuild if the
