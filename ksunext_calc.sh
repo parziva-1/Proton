@@ -92,15 +92,24 @@ if [ -e .git ]; then
   KBUILD_PATH="$KERNEL_DIR/drivers/kernelsu/kernel/Kbuild"
 
   updated_version=false
+  updated_fallback=false
 
   if [[ -f "$MAKEFILE_PATH" ]]; then
+    # Check for ccflags-y pattern
     if grep -qE '^[[:space:]]*ccflags-y[[:space:]]*\+=[[:space:]]*-DKSU_VERSION=[0-9]+' "$MAKEFILE_PATH"; then
-      echo "Updating $MAKEFILE_PATH..."
+      echo "Updating ccflags-y in $MAKEFILE_PATH..."
       # Only replace the hardcoded numeric version (not $(KSU_VERSION)).
       sed -i -E "s/^([[:space:]]*ccflags-y[[:space:]]*\+=[[:space:]]*-DKSU_VERSION=)[0-9]+/\1$KSU_VERSION/" "$MAKEFILE_PATH"
       updated_version=true
     else
       echo "Note: No numeric -DKSU_VERSION pattern found in $MAKEFILE_PATH"
+    fi
+    
+    # Check for KSU_VERSION_FALLBACK pattern
+    if grep -qE '^[[:space:]]*KSU_VERSION_FALLBACK[[:space:]]*:=[[:space:]]*[0-9]+' "$MAKEFILE_PATH"; then
+      echo "Updating KSU_VERSION_FALLBACK in $MAKEFILE_PATH..."
+      sed -i -E "s/^([[:space:]]*KSU_VERSION_FALLBACK[[:space:]]*:=[[:space:]]*)[0-9]+/\1$KSU_VERSION/" "$MAKEFILE_PATH"
+      updated_fallback=true
     fi
   else
     echo "Warning: $MAKEFILE_PATH not found"
@@ -109,7 +118,7 @@ if [ -e .git ]; then
   if [[ "$updated_version" != true ]]; then
     if [[ -f "$KBUILD_PATH" ]]; then
       if grep -qE '^[[:space:]]*ccflags-y[[:space:]]*\+=[[:space:]]*-DKSU_VERSION=[0-9]+' "$KBUILD_PATH"; then
-        echo "Updating $KBUILD_PATH..."
+        echo "Updating ccflags-y in $KBUILD_PATH..."
         sed -i -E "s/^([[:space:]]*ccflags-y[[:space:]]*\+=[[:space:]]*-DKSU_VERSION=)[0-9]+/\1$KSU_VERSION/" "$KBUILD_PATH"
         updated_version=true
       else
@@ -119,9 +128,21 @@ if [ -e .git ]; then
       echo "Warning: $KBUILD_PATH not found"
     fi
   fi
+  
+  if [[ "$updated_fallback" != true ]]; then
+    if [[ -f "$KBUILD_PATH" ]]; then
+      if grep -qE '^[[:space:]]*KSU_VERSION_FALLBACK[[:space:]]*:=[[:space:]]*[0-9]+' "$KBUILD_PATH"; then
+        echo "Updating KSU_VERSION_FALLBACK in $KBUILD_PATH..."
+        sed -i -E "s/^([[:space:]]*KSU_VERSION_FALLBACK[[:space:]]*:=[[:space:]]*)[0-9]+/\1$KSU_VERSION/" "$KBUILD_PATH"
+        updated_fallback=true
+      fi
+    fi
+  fi
 
-  if [[ "$updated_version" == true ]]; then
+  if [[ "$updated_version" == true ]] || [[ "$updated_fallback" == true ]]; then
     echo "-- KernelSU version updated to: $KSU_VERSION"
+    [[ "$updated_version" == true ]] && echo "   - Updated ccflags-y pattern"
+    [[ "$updated_fallback" == true ]] && echo "   - Updated KSU_VERSION_FALLBACK pattern"
   else
     echo "Warning: Could not update KernelSU version in Makefile or Kbuild"
   fi
