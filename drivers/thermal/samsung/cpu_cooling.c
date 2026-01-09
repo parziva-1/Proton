@@ -444,6 +444,7 @@ static int cpufreq_get_cur_state(struct thermal_cooling_device *cdev,
 static int cpufreq_set_cur_state(struct thermal_cooling_device *cdev,
 				 unsigned long state)
 {
+#if 0
 	struct exynos_cpufreq_cooling_device *cpufreq_cdev = cdev->devdata;
 	int ret;
 
@@ -476,6 +477,8 @@ static int cpufreq_set_cur_state(struct thermal_cooling_device *cdev,
 	dbg_snapshot_thermal(NULL, 1003, cpufreq_cdev->cdev->type,
 			cpufreq_cdev->policy->max);
 	return ret;
+#endif
+	return 0;
 }
 
 /**

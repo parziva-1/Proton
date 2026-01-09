@@ -452,6 +452,7 @@ static u32 get_dynamic_power(struct gpufreq_cooling_device *gpufreq_cdev,
  * Return: 0 on success, an error code otherwise (-EINVAL in case wrong
  * cooling state).
  */
+#if 0
 static int gpufreq_apply_cooling(struct gpufreq_cooling_device *gpufreq_cdev,
 				 unsigned long cooling_state)
 {
@@ -477,6 +478,7 @@ static int gpufreq_apply_cooling(struct gpufreq_cooling_device *gpufreq_cdev,
 
 	return 0;
 }
+#endif
 
 /* gpufreq cooling device callback functions are defined below */
 
@@ -537,9 +539,12 @@ static int gpufreq_get_cur_state(struct thermal_cooling_device *cdev,
 static int gpufreq_set_cur_state(struct thermal_cooling_device *cdev,
 				 unsigned long state)
 {
+#if 0
 	struct gpufreq_cooling_device *gpufreq_cdev = cdev->devdata;
 
 	return gpufreq_apply_cooling(gpufreq_cdev, state);
+#endif
+	return 0;
 }
 
 /**
