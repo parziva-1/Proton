@@ -598,9 +598,9 @@ static struct esgov_policy *esgov_policy_alloc(struct cpufreq_policy *policy)
 
 	esgov_init_slack_timer(policy);
 
-	esg_policy->rate_delay_ns = 4 * NSEC_PER_MSEC;
-	esg_policy->up_rate_limit_ns = 4 * NSEC_PER_MSEC;
-	esg_policy->down_rate_limit_ns = 4 * NSEC_PER_MSEC;
+	esg_policy->rate_delay_ns = 2 * NSEC_PER_MSEC;
+	esg_policy->up_rate_limit_ns = 1 * NSEC_PER_MSEC;
+	esg_policy->down_rate_limit_ns = 10 * NSEC_PER_MSEC;
 
 	/* Init Sysfs */
 	if (kobject_init_and_add(&esg_policy->kobj, &ktype_esg, esg_kobj,
@@ -1368,7 +1368,7 @@ static int esgov_register(void)
 
 #define DEFAULT_ESG_STEP	(4)
 #define DEFAULT_PATIENT_MODE	(0)
-#define DEFAULT_PELT_MARGIN	(25)
+#define DEFAULT_PELT_MARGIN	(40)
 #define DEFAULT_PELT_BOOST	(0)
 
 int esgov_pre_init(void)
