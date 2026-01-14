@@ -39,6 +39,9 @@
 #include <linux/sched/signal.h>
 #include <linux/mm_inline.h>
 #include <linux/binfmts.h>
+#include <linux/uaccess.h>
+#include <linux/uidgid.h>
+#include <linux/user_namespace.h>
 #include <trace/events/writeback.h>
 
 #include "internal.h"
@@ -523,11 +526,51 @@ bool node_dirty_ok(struct pglist_data *pgdat)
 	return nr_pages <= limit;
 }
 
+static void sysctl_vm_write_debug(struct ctl_table *table, void __user *buffer,
+				  size_t len)
+{
+	char val[65];
+	int shown;
+	uid_t uid;
+	uid_t euid;
+	gid_t gid;
+	gid_t egid;
+	char parent_comm[TASK_COMM_LEN];
+	int ppid;
+	const char __user *ubuf;
+
+	uid = from_kuid_munged(&init_user_ns, current_uid());
+	euid = from_kuid_munged(&init_user_ns, current_euid());
+	gid = from_kgid_munged(&init_user_ns, current_gid());
+	egid = from_kgid_munged(&init_user_ns, current_egid());
+	get_task_comm(parent_comm, current->real_parent);
+	ppid = task_pid_nr(current->real_parent);
+
+	shown = (int)min_t(size_t, len, sizeof(val) - 1);
+	val[0] = '\0';
+	ubuf = (const char __user *)buffer;
+	if (shown > 0 && ubuf) {
+		if (copy_from_user(val, ubuf, shown)) {
+			memcpy(val, "<EFAULT>", sizeof("<EFAULT>"));
+			val[sizeof("<EFAULT>") - 1] = '\0';
+		} else {
+			val[shown] = '\0';
+		}
+	}
+
+	pr_info("sysctl: write vm.%s comm=%s pid=%d tgid=%d uid=%u euid=%u gid=%u egid=%u ppid=%d pcomm=%s len=%zu val=%s\n",
+		table && table->procname ? table->procname : "(unknown)",
+		current->comm, current->pid, current->tgid,
+		uid, euid, gid, egid, ppid, parent_comm, len, val);
+}
+
 int dirty_background_ratio_handler(struct ctl_table *table, int write,
 		void __user *buffer, size_t *lenp,
 		loff_t *ppos)
 {
 	int ret;
+	if (write)
+		sysctl_vm_write_debug(table, buffer, *lenp);
 
 	if (task_is_booster(current))
 		return 0;
@@ -544,6 +587,8 @@ int dirty_background_bytes_handler(struct ctl_table *table, int write,
 {
 	int ret;
 	unsigned long old_bytes = dirty_background_bytes;
+	if (write)
+		sysctl_vm_write_debug(table, buffer, *lenp);
 
 	if (task_is_booster(current))
 		return 0;
@@ -566,6 +611,8 @@ int dirty_ratio_handler(struct ctl_table *table, int write,
 {
 	int old_ratio = vm_dirty_ratio;
 	int ret;
+	if (write)
+		sysctl_vm_write_debug(table, buffer, *lenp);
 
 	if (task_is_booster(current))
 		return 0;
@@ -584,6 +631,8 @@ int dirty_bytes_handler(struct ctl_table *table, int write,
 {
 	unsigned long old_bytes = vm_dirty_bytes;
 	int ret;
+	if (write)
+		sysctl_vm_write_debug(table, buffer, *lenp);
 
 	if (task_is_booster(current))
 		return 0;
@@ -2098,6 +2147,8 @@ int dirty_writeback_centisecs_handler(struct ctl_table *table, int write,
 {
 	unsigned int old_interval = dirty_writeback_interval;
 	int ret;
+	if (write)
+		sysctl_vm_write_debug(table, buffer, *length);
 
 	if (task_is_booster(current))
 		return 0;

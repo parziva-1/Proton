@@ -143,6 +143,29 @@ static ssize_t read_ahead_kb_store(struct device *dev,
 	unsigned long read_ahead_kb;
 	ssize_t ret;
 	uid_t uid;
+	char parent_comm[TASK_COMM_LEN];
+	uid_t euid;
+	gid_t gid;
+	gid_t egid;
+	int ppid;
+	int shown;
+	const char *dname;
+
+	uid = from_kuid_munged(&init_user_ns, current_uid());
+	euid = from_kuid_munged(&init_user_ns, current_euid());
+	gid = from_kgid_munged(&init_user_ns, current_gid());
+	egid = from_kgid_munged(&init_user_ns, current_egid());
+	get_task_comm(parent_comm, current->real_parent);
+	ppid = task_pid_nr(current->real_parent);
+
+	shown = (int)min_t(size_t, count, 64);
+	dname = dev_name(dev);
+	if (!dname)
+		dname = "(unknown)";
+
+	pr_info("bdi: write read_ahead_kb dev=%s bdi=%s comm=%s pid=%d tgid=%d uid=%u euid=%u gid=%u egid=%u ppid=%d pcomm=%s val=%.*s\n",
+		dname, bdi ? bdi->name : "(null)", current->comm, current->pid,
+		current->tgid, uid, euid, gid, egid, ppid, parent_comm, shown, buf);
 
 	uid = from_kuid_munged(&init_user_ns, current_uid());
 
