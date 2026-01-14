@@ -9,6 +9,9 @@
 #include <linux/pagemap.h>
 #include <linux/mm.h>
 #include <linux/sched.h>
+#include <linux/binfmts.h>
+#include <linux/uidgid.h>
+#include <linux/user_namespace.h>
 #include <linux/module.h>
 #include <linux/writeback.h>
 #include <linux/device.h>
@@ -139,6 +142,12 @@ static ssize_t read_ahead_kb_store(struct device *dev,
 	struct backing_dev_info *bdi = dev_get_drvdata(dev);
 	unsigned long read_ahead_kb;
 	ssize_t ret;
+	uid_t uid;
+
+	uid = from_kuid_munged(&init_user_ns, current_uid());
+
+	if (!task_is_booster(current) && uid != 0)
+		return count;
 
 	ret = kstrtoul(buf, 10, &read_ahead_kb);
 	if (ret < 0)

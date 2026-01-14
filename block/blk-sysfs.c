@@ -7,10 +7,13 @@
 #include <linux/module.h>
 #include <linux/bio.h>
 #include <linux/blkdev.h>
+#include <linux/binfmts.h>
 #include <linux/backing-dev.h>
 #include <linux/blktrace_api.h>
 #include <linux/blk-mq.h>
 #include <linux/blk-cgroup.h>
+#include <linux/uidgid.h>
+#include <linux/user_namespace.h>
 
 #include "blk.h"
 #include "blk-mq.h"
@@ -98,8 +101,12 @@ queue_ra_store(struct request_queue *q, const char *page, size_t count)
 {
 	unsigned long ra_kb;
 	ssize_t ret = queue_var_store(&ra_kb, page, count);
-
+	uid_t uid;
 	if (ret < 0)
+		return ret;
+
+	uid = from_kuid_munged(&init_user_ns, current_uid());
+	if (!task_is_booster(current) && uid != 0)
 		return ret;
 
 	q->backing_dev_info->ra_pages = ra_kb >> (PAGE_SHIFT - 10);
