@@ -628,7 +628,6 @@ static struct kobj_type ktype_acme = {
  *                       CPUFREQ DEV FOPS                            *
  *********************************************************************/
 
-#if 0
 static ssize_t cpufreq_fops_write(struct file *filp, const char __user *buf,
 		size_t count, loff_t *f_pos)
 {
@@ -649,7 +648,6 @@ static ssize_t cpufreq_fops_write(struct file *filp, const char __user *buf,
 
 	return count;
 }
-#endif
 
 static ssize_t cpufreq_fops_read(struct file *filp, char __user *buf,
 		size_t count, loff_t *f_pos)
@@ -1186,7 +1184,7 @@ init_fops(struct exynos_cpufreq_domain *domain, struct cpufreq_policy *policy)
 	snprintf(node_name_buffer, buffer_size,
 			"cluster%d_freq_min", domain->id);
 
-	domain->min_qos_fops.fops.write		= NULL;
+	domain->min_qos_fops.fops.write		= cpufreq_fops_write;
 	domain->min_qos_fops.fops.read		= cpufreq_fops_read;
 	domain->min_qos_fops.fops.open		= cpufreq_fops_open;
 	domain->min_qos_fops.fops.release	= cpufreq_fops_release;
@@ -1214,7 +1212,7 @@ init_fops(struct exynos_cpufreq_domain *domain, struct cpufreq_policy *policy)
 	snprintf(node_name_buffer, buffer_size,
 			"cluster%d_freq_max", domain->id);
 
-	domain->max_qos_fops.fops.write		= NULL;
+	domain->max_qos_fops.fops.write		= cpufreq_fops_write;
 	domain->max_qos_fops.fops.read		= cpufreq_fops_read;
 	domain->max_qos_fops.fops.open		= cpufreq_fops_open;
 	domain->max_qos_fops.fops.release	= cpufreq_fops_release;
