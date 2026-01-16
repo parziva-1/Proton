@@ -115,7 +115,6 @@ static int dev_get_cur_state(struct thermal_cooling_device *cdev,
 static int dev_set_cur_state(struct thermal_cooling_device *cdev,
 				 unsigned long state)
 {
-#if 0
 	struct dev_cooling_device *dev = cdev->devdata;
 
 	if (dev->dev_state == state)
@@ -126,8 +125,6 @@ static int dev_set_cur_state(struct thermal_cooling_device *cdev,
 	dbg_snapshot_thermal(NULL, 0, cdev->type, dev->dev_val);
 	exynos_pm_qos_update_request(&dev->thermal_pm_qos_max, dev->dev_val);
 
-	return 0;
-#endif
 	return 0;
 }
 

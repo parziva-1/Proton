@@ -249,7 +249,6 @@ EXPORT_SYMBOL_GPL(isp_cooling_get_fps);
  * Return: 0 on success, an error code otherwise (-EINVAL in case wrong
  * cooling state).
  */
-#if 0
 static int isp_apply_cooling(struct isp_cooling_device *isp_device,
 				 unsigned long cooling_state)
 {
@@ -263,7 +262,6 @@ static int isp_apply_cooling(struct isp_cooling_device *isp_device,
 
 	return 0;
 }
-#endif
 
 /* isp cooling device callback functions are defined below */
 
@@ -324,12 +322,9 @@ static int isp_get_cur_state(struct thermal_cooling_device *cdev,
 static int isp_set_cur_state(struct thermal_cooling_device *cdev,
 				 unsigned long state)
 {
-#if 0
 	struct isp_cooling_device *isp_device = cdev->devdata;
 
 	return isp_apply_cooling(isp_device, state);
-#endif
-	return 0;
 }
 
 /* Bind isp callbacks to thermal cooling device ops */
