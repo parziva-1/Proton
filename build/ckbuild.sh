@@ -106,7 +106,7 @@ fi
 
 ## Customizable vars
 # Kernel version
-K_VER="v6.1.0-Testing-Stage"
+K_VER="v6.1.0"
 # Toggles
 USE_CCACHE=1
 DO_TAR="1"
