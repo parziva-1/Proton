@@ -678,6 +678,8 @@ asmlinkage __visible void __init start_kernel(void)
 		parse_args("Setting init args", after_dashes, NULL, 0, -1, -1,
 			   NULL, set_init_arg);
 
+	pr_info("Workaround: uname_bpf_spoof=%d\n", uname_bpf_spoof);
+
 	/*
 	 * These use large bootmem allocations and must precede
 	 * kmem_cache_init()
