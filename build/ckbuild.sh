@@ -106,7 +106,7 @@ fi
 
 ## Customizable vars
 # Kernel version
-K_VER="v6.1.0"
+K_VER="v6.1.1"
 # Toggles
 USE_CCACHE=1
 DO_TAR="1"
@@ -194,6 +194,7 @@ BUILD_TYPE_DEFAULT=0
 BUILD_TYPE_BALANCED=0
 BUILD_TYPE_OC=0
 BUILD_TYPE_BATTERY=0
+BUILD_TYPE_PER=0
 BUILD_TYPE_STR=""
 
 case "$BUILD_VARIANT" in
@@ -211,6 +212,10 @@ case "$BUILD_VARIANT" in
     oc)
         BUILD_TYPE_STR="Overclock"
         BUILD_TYPE_OC=1
+        ;;
+    per)
+        BUILD_TYPE_STR="per"
+        BUILD_TYPE_PER=1
         ;;
     *)
         echo "Unknown build variant: $BUILD_VARIANT, defaulting to 'default'"
@@ -456,6 +461,10 @@ build() {
         scripts/config --file "$KDIR/out/.config" --set-val CONFIG_SOC_EXYNOS2100_CL1_UV 0
         scripts/config --file "$KDIR/out/.config" --set-val CONFIG_SOC_EXYNOS2100_CL2_UV 0
     fi
+
+    if [ "$BUILD_TYPE_PER" == "1" ]; then
+        scripts/config --file "$KDIR/out/.config" --set-val CONFIG_SECURITY_SELINUX_ALWAYS_PERMISSIVE y
+    fi
     ## Start the build
     echo -e "\n${C_CYAN}INFO:${C_RST} Starting compilation...\n"
 
@@ -540,6 +549,8 @@ post_build() {
         DTS_SRC="$DTS_BATTERY"
     elif [ "$BUILD_TYPE_OC" = "1" ]; then
         DTS_SRC="$DTS_OC"
+    elif [ "$BUILD_TYPE_PER" = "1" ]; then
+        DTS_SRC="$DTS_DEFAULT"
     fi
     echo -e "\n${C_CYAN}INFO:${C_RST} Compiling DTS: $DTS_SRC -> $DTB_OUT\n"
     dtc -I dts -O dtb -o "$DTB_OUT" "$DTS_SRC" >/dev/null 2>&1
