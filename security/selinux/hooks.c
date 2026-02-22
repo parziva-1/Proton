@@ -7338,6 +7338,12 @@ static __init int selinux_init(void)
 	pr_info("SELinux:  Initializing.\n");
 
 	memset(&selinux_state, 0, sizeof(selinux_state));
+#ifdef CONFIG_SECURITY_SELINUX_ALWAYS_ENFORCE
+  	// If always enforce option is set, selinux is always enforcing
+	selinux_enforcing_boot = 1;
+#elif defined(CONFIG_SECURITY_SELINUX_ALWAYS_PERMISSIVE)
+	selinux_enforcing_boot = 0;
+#endif
 	enforcing_set(&selinux_state, selinux_enforcing_boot);
 	selinux_state.checkreqprot = selinux_checkreqprot_boot;
 	selinux_ss_init(&selinux_state.ss);
