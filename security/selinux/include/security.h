@@ -133,11 +133,30 @@ static inline void selinux_mark_initialized(struct selinux_state *state)
 
 static inline bool enforcing_enabled(struct selinux_state *state)
 {
+#ifdef CONFIG_SECURITY_SELINUX_DEVELOP
+#if defined(CONFIG_SECURITY_SELINUX_ALWAYS_ENFORCE)
 	return true;
+#elif defined(CONFIG_SECURITY_SELINUX_ALWAYS_PERMISSIVE)
+	return false;
+#else
+	return READ_ONCE(state->enforcing);
+#endif
+#else
+	return true;
+#endif
 }
 
 static inline void enforcing_set(struct selinux_state *state, bool value)
 {
+#ifdef CONFIG_SECURITY_SELINUX_DEVELOP
+#if defined(CONFIG_SECURITY_SELINUX_ALWAYS_ENFORCE)
+	WRITE_ONCE(state->enforcing, true);
+#elif defined(CONFIG_SECURITY_SELINUX_ALWAYS_PERMISSIVE)
+	WRITE_ONCE(state->enforcing, false);
+#else
+	WRITE_ONCE(state->enforcing, value);
+#endif
+#endif
 }
 
 #ifdef CONFIG_SECURITY_SELINUX_DISABLE
@@ -257,7 +276,7 @@ struct extended_perms {
 
 /* definitions of av_decision.flags */
 // [ SEC_SELINUX_PORTING_COMMON
-#ifdef CONFIG_ALWAYS_ENFORCE
+#ifdef CONFIG_SECURITY_SELINUX_ALWAYS_ENFORCE
 #define AVD_FLAGS_PERMISSIVE	0x0000
 #else
 #define AVD_FLAGS_PERMISSIVE	0x0001
