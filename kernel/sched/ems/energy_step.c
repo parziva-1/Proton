@@ -742,7 +742,7 @@ complete_esg_init:
 	esg_policy->uclamp_min = 0;
 	esg_policy->uclamp_max = SCHED_CAPACITY_SCALE;
 	esg_policy->uclamp_monitor_len = 1;	/* Default 1 window == 4ms */
-	esg_policy->uclamp_busy_ratio = 60;	/* Default 80% */
+	esg_policy->uclamp_busy_ratio = 80;	/* Default 80% */
 	up_write(&esg_policy->rwsem);
 
 	return 0;
