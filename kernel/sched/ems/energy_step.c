@@ -1037,46 +1037,30 @@ enum {
  * wait 5 ticks for it to take effect.
  */
 static bool esgov_postpone_freq_update(struct esgov_policy *esg_policy,
-        int cpu, u64 time, unsigned int target_freq, int rapid_scale)
+		int cpu, u64 time, unsigned int target_freq, int rapid_scale)
 {
-    unsigned int diff_num_levels, num_periods, elapsed, margin;
+	unsigned int diff_num_levels, num_periods, elapsed, margin;
 
-    elapsed = time - esg_policy->last_freq_update_time;
-    if (esg_policy->policy->cur < target_freq) {
-        if (rapid_scale == RAPID_SCALE_UP)
-            return false;
+	elapsed = time - esg_policy->last_freq_update_time;
 
-        if (elapsed < (1 * NSEC_PER_MSEC))
-            return true;
-            
-        return false;
-    }
+	/* In this point target_freq is different with cur freq */
+	if (esg_policy->policy->cur < target_freq) {
+		u64 ramp_up_bound = esg_policy->up_rate_limit_ns;
 
-    else {
-        u64 ramp_down_bound = esg_policy->down_rate_limit_ns;
+		if (rapid_scale == RAPID_SCALE_UP)
+			return false;
 
-        if (rapid_scale == RAPID_SCALE_DOWN)
-            return false;
+		if (elapsed < ramp_up_bound)
+			return true;
+	} else {
+		u64 ramp_down_bound = esg_policy->down_rate_limit_ns;
 
-        if (elapsed < ramp_down_bound)
-            return true;
-    }
+		if (rapid_scale == RAPID_SCALE_DOWN)
+			return false;
 
-    if (esg_policy->pelt_margin <= 0 && target_freq > esg_policy->policy->cur)
-        return false;
-
-    margin  = esg_policy->rate_delay_ns >> 2;
-    num_periods = (elapsed + margin) / esg_policy->rate_delay_ns;
-    if (num_periods > ESG_MAX_DELAY_PERIODS)
-        return false;
-
-    diff_num_levels = get_diff_num_levels(cpu, target_freq,
-            esg_policy->policy->cur);
-    if (diff_num_levels > ESG_MAX_DELAY_PERIODS - num_periods)
-        return false;
-    else
-        return true;
-}
+		if (elapsed < ramp_down_bound)
+			return true;
+	}
 
 	/*
 	 * if there is no pelt_margin, we do better increase
