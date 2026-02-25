@@ -395,7 +395,7 @@ static void esgov_iowait_boost(struct esgov_cpu *esg_cpu, u64 time,
 	}
 
 	/* First wakeup after IO: start with minimum boost */
-	esg_cpu->iowait_boost = max(esg_cpu->min, (unsigned int)(SCHED_CAPACITY_SCALE >> 1));
+	esg_cpu->iowait_boost = esg_cpu->min;
 }
 
 /**

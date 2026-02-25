@@ -543,9 +543,6 @@ struct request_queue *blk_alloc_queue_node(gfp_t gfp_mask, int node_id)
 	if (blkcg_init_queue(q))
 		goto fail_ref;
 
-    /* Disabled IO overhead and Randomness */
-    blk_queue_flag_clear(QUEUE_FLAG_IO_STAT, q);
-    blk_queue_flag_clear(QUEUE_FLAG_ADD_RANDOM, q);
 	return q;
 
 fail_ref:
