@@ -1076,7 +1076,7 @@ static bool esgov_postpone_freq_update(struct esgov_policy *esg_policy,
         return false;
     else
         return true;
-
+}
 
 	/*
 	 * if there is no pelt_margin, we do better increase
