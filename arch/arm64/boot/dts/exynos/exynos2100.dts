@@ -13742,21 +13742,46 @@
 		#size-cells = <0x00>;
 
 		cpu-map {
+
 			cluster0 {
-				core0 { cpu = <0x0e>; };
-				core1 { cpu = <0x10>; };
-				core2 { cpu = <0x12>; };
-				core3 { cpu = <0x14>; };
+
+				core0 {
+					cpu = <0x0e>;
+				};
+
+				core1 {
+					cpu = <0x10>;
+				};
+
+				core2 {
+					cpu = <0x12>;
+				};
+
+				core3 {
+					cpu = <0x14>;
+				};
 			};
 
 			cluster1 {
-				core0 { cpu = <0x16>; };
-				core1 { cpu = <0x18>; };
-				core2 { cpu = <0x1a>; };
+
+				core0 {
+					cpu = <0x16>;
+				};
+
+				core1 {
+					cpu = <0x18>;
+				};
+
+				core2 {
+					cpu = <0x1a>;
+				};
 			};
 
 			cluster2 {
-				core0 { cpu = <0x1c>; };
+
+				core0 {
+					cpu = <0x1c>;
+				};
 			};
 		};
 
@@ -13849,7 +13874,7 @@
 			compatible = "arm,hera", "arm,armv8";
 			reg = <0x00 0x700>;
 			capacity-dmips-mhz = <0x400>;
-			dynamic-power-coefficient = <0x280>;
+			dynamic-power-coefficient = <0x240>;
 			enable-method = "psci";
 			cpu-idle-states = <0x108>;
 			sched-energy-data = <0x109>;
@@ -13887,7 +13912,7 @@
 				arm,psci-suspend-param = <0x10000>;
 				entry-latency-us = <0xeb>;
 				exit-latency-us = <0xdc>;
-				min-residency-us = <0xdac>; 
+				min-residency-us = <0xdac>;
 				status = "okay";
 				phandle = <0x108>;
 			};
@@ -13912,7 +13937,7 @@
 
 			hera-energy {
 				mips-per-mhz = <0x3e5>;
-				power-coefficient = <0x280>;
+				power-coefficient = <0x2f5>;
 				static-power-coefficient = <0x139>;
 				phandle = <0x109>;
 			};
