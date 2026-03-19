@@ -401,6 +401,20 @@ prep_build() {
 }
 
 build() {
+    local config_fragments=()
+
+    if [ "$DO_REGEN" != "1" ]; then
+        config_fragments+=(
+            "droidspaces.config"
+        )
+    fi
+
+    if [ "$DO_KSU" = "1" ]; then
+        config_fragments+=(
+            "ksu.config"
+        )
+    fi
+
     # Delete log.txt at the start
     rm -f log.txt
 
@@ -421,7 +435,8 @@ build() {
     rm -f $OUT_KERNEL
     rm -rf "$MOD_OUTDIR"
 
-    make -j$(nproc --all) O=out CC="clang" CROSS_COMPILE="$CCARM64_PREFIX" $DEFCONFIG $([[ "$DO_KSU" == "1" ]] && echo "ksu.config") 2>&1 | tee log.txt
+    make -j$(nproc --all) O=out CC="clang" CROSS_COMPILE="$CCARM64_PREFIX" \
+        "$DEFCONFIG" "${config_fragments[@]}" 2>&1 | tee log.txt
 
     if [ $DO_MENUCONFIG = "1" ]; then
         make O=out menuconfig 2>&1 >> log.txt
