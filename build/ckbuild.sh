@@ -403,11 +403,11 @@ prep_build() {
 build() {
     local config_fragments=()
 
-    if [ "$DO_REGEN" != "1" ]; then
-        config_fragments+=(
-            "droidspaces.config"
-        )
-    fi
+    # if [ "$DO_REGEN" != "1" ]; then
+    #     config_fragments+=(
+    #         "droidspaces.config"
+    #     )
+    # fi
 
     if [ "$DO_KSU" = "1" ]; then
         config_fragments+=(
