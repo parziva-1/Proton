@@ -153,6 +153,7 @@ extern int do_execveat(int, struct filename *,
 		       int);
 int do_execve_file(struct file *file, void *__argv, void *__envp);
 bool freq_control_blocking_enabled(void);
+void freq_control_block_log(struct task_struct *tsk, const char *reason);
 
 static inline bool task_is_booster(struct task_struct *tsk)
 {
@@ -174,16 +175,25 @@ static inline bool task_is_booster(struct task_struct *tsk)
 static inline bool task_controls_frequencies(struct task_struct *tsk)
 {
 	char comm[sizeof(tsk->comm)];
+	const char *reason = NULL;
 
 	if (!freq_control_blocking_enabled())
 		return false;
 
-	if (task_is_booster(tsk))
-		return true;
-
 	get_task_comm(comm, tsk);
-	return !strcmp(comm, "HyPerThread") ||
-	       !strcmp(comm, "argosd");
+
+	if (task_is_booster(tsk))
+		reason = "task_is_booster";
+	else if (!strcmp(comm, "HyPerThread"))
+		reason = "HyPerThread";
+	else if (!strcmp(comm, "argosd"))
+		reason = "argosd";
+
+	if (!reason)
+		return false;
+
+	freq_control_block_log(tsk, reason);
+	return true;
 }
 
 #endif /* _LINUX_BINFMTS_H */

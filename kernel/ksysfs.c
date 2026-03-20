@@ -189,6 +189,17 @@ bool freq_control_blocking_enabled(void)
 {
 	return READ_ONCE(freq_control_blocking);
 }
+EXPORT_SYMBOL_GPL(freq_control_blocking_enabled);
+
+void freq_control_block_log(struct task_struct *tsk, const char *reason)
+{
+	char comm[TASK_COMM_LEN];
+
+	get_task_comm(comm, tsk);
+	pr_info_ratelimited("freq-block-hit: comm=%s pid=%d tgid=%d rule=%s\n",
+			    comm, task_pid_nr(tsk), task_tgid_nr(tsk), reason);
+}
+EXPORT_SYMBOL_GPL(freq_control_block_log);
 
 static ssize_t freq_control_blocking_enabled_show(struct kobject *kobj,
 						  struct kobj_attribute *attr,
