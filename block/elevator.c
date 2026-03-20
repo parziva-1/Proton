@@ -687,6 +687,8 @@ void elevator_init_mq(struct request_queue *q)
 		e = elevator_get(q, "ssg", false);
 	} else if (IS_ENABLED(CONFIG_MQ_DEADLINE_DEFAULT)) {
 		e = elevator_get(q, "mq-deadline", false);
+	} else if (IS_ENABLED(CONFIG_MQ_ADIOS_DEFAULT)) {
+		e = elevator_get(q, "adios", false);
 	} else if (!q->required_elevator_features) {
 		if (IS_ENABLED(CONFIG_NONE_DEFAULT))
 			return;
