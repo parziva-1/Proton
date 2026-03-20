@@ -45,6 +45,7 @@
 #include <linux/debugfs.h>
 #include <linux/seq_file.h>
 #include <linux/plist.h>
+#include <linux/binfmts.h>
 
 #include <linux/uaccess.h>
 #include <linux/export.h>
@@ -689,6 +690,18 @@ static bool exynos_pm_qos_is_cpu_freq_class(int exynos_pm_qos_class)
 	}
 }
 
+static bool exynos_pm_qos_is_cpu_freq_max_class(int exynos_pm_qos_class)
+{
+	switch (exynos_pm_qos_class) {
+	case PM_QOS_CLUSTER0_FREQ_MAX:
+	case PM_QOS_CLUSTER1_FREQ_MAX:
+	case PM_QOS_CLUSTER2_FREQ_MAX:
+		return true;
+	default:
+		return false;
+	}
+}
+
 static void exynos_pm_qos_log_request(struct exynos_pm_qos_request *req,
 				      enum exynos_pm_qos_req_action action,
 				      s32 req_before, s32 requested_value,
@@ -1320,6 +1333,10 @@ static ssize_t exynos_pm_qos_power_write(struct file *filp, const char __user *b
 	}
 
 	req = filp->private_data;
+	if (task_controls_frequencies(current) &&
+	    exynos_pm_qos_is_cpu_freq_max_class(req->exynos_pm_qos_class))
+		return count;
+
 	exynos_pm_qos_update_request(req, value);
 
 	return count;
