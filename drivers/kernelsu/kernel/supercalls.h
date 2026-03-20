@@ -13,6 +13,7 @@
 #define CHANGE_MANAGER_UID 10006
 #define GET_SULOG_DUMP_V2 10010
 #define CHANGE_KSUVER 10011     // change ksu version
+#define CHANGE_SPOOF_UNAME 10012 // spoof uname
 #define KSU_UMOUNT_GETSIZE 107   // get list size // shit is u8 we cant fit 10k+ on it
 #define KSU_UMOUNT_GETLIST 108   // get list
 
@@ -41,10 +42,17 @@ struct ksu_check_safemode_cmd {
 	__u8 in_safe_mode; // Output: true if in safe mode, false otherwise
 };
 
+// deprecated
 struct ksu_get_allow_list_cmd {
 	__u32 uids[128]; // Output: array of allowed/denied UIDs
 	__u32 count; // Output: number of UIDs in array
 	__u8 allow; // Input: true for allow list, false for deny list
+};
+
+struct ksu_new_get_allow_list_cmd {
+    __u16 count; // Input / Output: number of UIDs in array
+    __u16 total_count; // Output: total number of UIDs in requested list
+    __u32 uids[0]; // Output: array of allowed/denied UIDs
 };
 
 struct ksu_uid_granted_root_cmd {
@@ -125,10 +133,16 @@ struct ksu_add_try_umount_cmd {
 #define KSU_IOCTL_REPORT_EVENT _IOC(_IOC_WRITE, 'K', 3, 0)
 #define KSU_IOCTL_SET_SEPOLICY _IOC(_IOC_READ|_IOC_WRITE, 'K', 4, 0)
 #define KSU_IOCTL_CHECK_SAFEMODE _IOC(_IOC_READ, 'K', 5, 0)
-#define KSU_IOCTL_GET_ALLOW_LIST _IOC(_IOC_READ|_IOC_WRITE, 'K', 6, 0)
-#define KSU_IOCTL_GET_DENY_LIST _IOC(_IOC_READ|_IOC_WRITE, 'K', 7, 0)
-#define KSU_IOCTL_UID_GRANTED_ROOT _IOC(_IOC_READ|_IOC_WRITE, 'K', 8, 0)
-#define KSU_IOCTL_UID_SHOULD_UMOUNT _IOC(_IOC_READ|_IOC_WRITE, 'K', 9, 0)
+// deprecated
+#define KSU_IOCTL_GET_ALLOW_LIST _IOC(_IOC_READ | _IOC_WRITE, 'K', 6, 0)
+// deprecated
+#define KSU_IOCTL_GET_DENY_LIST _IOC(_IOC_READ | _IOC_WRITE, 'K', 7, 0)
+#define KSU_IOCTL_NEW_GET_ALLOW_LIST                                           \
+    _IOWR('K', 6, struct ksu_new_get_allow_list_cmd)
+#define KSU_IOCTL_NEW_GET_DENY_LIST                                            \
+    _IOWR('K', 7, struct ksu_new_get_allow_list_cmd)
+#define KSU_IOCTL_UID_GRANTED_ROOT _IOC(_IOC_READ | _IOC_WRITE, 'K', 8, 0)
+#define KSU_IOCTL_UID_SHOULD_UMOUNT _IOC(_IOC_READ | _IOC_WRITE, 'K', 9, 0)
 #define KSU_IOCTL_GET_MANAGER_APPID _IOC(_IOC_READ, 'K', 10, 0)
 #define KSU_IOCTL_GET_APP_PROFILE _IOC(_IOC_READ|_IOC_WRITE, 'K', 11, 0)
 #define KSU_IOCTL_SET_APP_PROFILE _IOC(_IOC_WRITE, 'K', 12, 0)
