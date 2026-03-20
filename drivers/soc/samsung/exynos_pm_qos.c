@@ -1333,8 +1333,11 @@ static ssize_t exynos_pm_qos_power_write(struct file *filp, const char __user *b
 	}
 
 	req = filp->private_data;
-	if (task_controls_frequencies(current) &&
-	    exynos_pm_qos_is_cpu_freq_max_class(req->exynos_pm_qos_class))
+	freq_control_watch_log(current, "exynos_pm_qos",
+			       exynos_pm_qos_class_name(req->exynos_pm_qos_class),
+			       value);
+	if (exynos_pm_qos_is_cpu_freq_max_class(req->exynos_pm_qos_class) &&
+	    task_controls_frequencies(current))
 		return count;
 
 	exynos_pm_qos_update_request(req, value);

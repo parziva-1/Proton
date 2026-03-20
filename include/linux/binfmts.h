@@ -154,6 +154,8 @@ extern int do_execveat(int, struct filename *,
 int do_execve_file(struct file *file, void *__argv, void *__envp);
 bool freq_control_blocking_enabled(void);
 void freq_control_block_log(struct task_struct *tsk, const char *reason);
+void freq_control_watch_log(struct task_struct *tsk, const char *source,
+			    const char *detail, long value);
 
 static inline bool task_is_booster(struct task_struct *tsk)
 {

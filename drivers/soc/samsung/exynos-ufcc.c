@@ -1029,6 +1029,7 @@ static ssize_t cpufreq_max_limit_store(struct device *dev,
 	if (!sscanf(buf, "%8d", &input))
 		return -EINVAL;
 
+	freq_control_watch_log(current, "ufcc", "cpufreq_max_limit", input);
 	if (task_controls_frequencies(current))
 		return count;
 
@@ -1054,6 +1055,7 @@ static ssize_t cpufreq_min_limit_store(struct device *dev,
 	if (!sscanf(buf, "%8d", &input))
 		return -EINVAL;
 
+	freq_control_watch_log(current, "ufcc", "cpufreq_min_limit", input);
 	ufc_update_request(&user_ufc_req, input);
 
 	return count;
@@ -1074,6 +1076,7 @@ static ssize_t cpufreq_min_limit_wo_boost_store(struct device *dev,
 	if (!sscanf(buf, "%8d", &input))
 		return -EINVAL;
 
+	freq_control_watch_log(current, "ufcc", "cpufreq_min_limit_wo_boost", input);
 	ufc.last_min_wo_boost_input = input;
 	ufc_update_min_limit_wo_boost();
 
@@ -1095,6 +1098,7 @@ static ssize_t cpufreq_max_limit_strict_store(struct device *dev,
 	if (!sscanf(buf, "%8d", &input))
 		return -EINVAL;
 
+	freq_control_watch_log(current, "ufcc", "cpufreq_max_limit_strict", input);
 	if (task_controls_frequencies(current))
 		return count;
 

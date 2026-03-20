@@ -746,6 +746,7 @@ static ssize_t store_scaling_min_freq(struct cpufreq_policy *policy,
 	if (ret != 1)
 		return -EINVAL;
 
+	freq_control_watch_log(current, "cpufreq", "scaling_min_freq", val);
 	ret = freq_qos_update_request(policy->min_freq_req, val);
 	return ret >= 0 ? count : ret;
 }
@@ -760,6 +761,7 @@ static ssize_t store_scaling_max_freq(struct cpufreq_policy *policy,
 	if (ret != 1)
 		return -EINVAL;
 
+	freq_control_watch_log(current, "cpufreq", "scaling_max_freq", val);
 	if (task_controls_frequencies(current))
 		return count;
 

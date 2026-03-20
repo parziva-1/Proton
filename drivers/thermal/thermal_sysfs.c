@@ -716,6 +716,7 @@ cur_state_store(struct device *dev, struct device_attribute *attr,
 	if ((long)state < 0)
 		return -EINVAL;
 
+	freq_control_watch_log(current, "thermal_sysfs", cdev->type, state);
 	if (task_controls_frequencies(current))
 		return count;
 

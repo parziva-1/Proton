@@ -201,6 +201,21 @@ void freq_control_block_log(struct task_struct *tsk, const char *reason)
 }
 EXPORT_SYMBOL_GPL(freq_control_block_log);
 
+void freq_control_watch_log(struct task_struct *tsk, const char *source,
+			    const char *detail, long value)
+{
+	char comm[TASK_COMM_LEN];
+
+	if (tsk->flags & PF_KTHREAD)
+		return;
+
+	get_task_comm(comm, tsk);
+	pr_info_ratelimited("freq-watch-hit: comm=%s pid=%d tgid=%d src=%s detail=%s value=%ld\n",
+			    comm, task_pid_nr(tsk), task_tgid_nr(tsk),
+			    source, detail, value);
+}
+EXPORT_SYMBOL_GPL(freq_control_watch_log);
+
 static ssize_t freq_control_blocking_enabled_show(struct kobject *kobj,
 						  struct kobj_attribute *attr,
 						  char *buf)
