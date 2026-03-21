@@ -1015,8 +1015,16 @@ static void esgov_update_cpu_util(struct esgov_policy *esg_policy, u64 time, uns
 static bool esgov_check_rate_delay(struct esgov_policy *esg_policy, u64 time)
 {
 	s64 delta_ns = time - esg_policy->last_freq_update_time;
+	u64 min_delay_ns;
 
-	if (delta_ns < esg_policy->rate_delay_ns)
+	/*
+	 * Do not let the generic front gate hide the shorter up-ramp window.
+	 * The direction-aware postpone logic below still handles the slower
+	 * downscale path and the multi-level smoothing heuristics.
+	 */
+	min_delay_ns = min_t(u64, esg_policy->rate_delay_ns, NSEC_PER_MSEC);
+
+	if (delta_ns < min_delay_ns)
 		return false;
 
 	return true;
