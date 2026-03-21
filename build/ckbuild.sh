@@ -52,6 +52,8 @@ if [ "$IS_GP" = "1" ]; then
     export KBUILD_BUILD_HOST="buildbot"
 fi
 
+export KBUILD_BUILD_TIMESTAMP="$(LC_ALL=C date)"
+
 export PATH="$(pwd)/build/bin:$PATH"
 
 # Directories
