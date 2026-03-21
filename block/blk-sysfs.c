@@ -26,6 +26,23 @@ struct queue_sysfs_entry {
 	ssize_t (*store)(struct request_queue *, const char *, size_t);
 };
 
+#define BLK_READ_AHEAD_FLOOR_KB 512
+
+static bool blk_readahead_floor_locked(struct request_queue *q,
+				       unsigned long ra_kb)
+{
+	const char *owner_name;
+
+	if (!q || !q->backing_dev_info || !q->backing_dev_info->owner)
+		return false;
+
+	owner_name = dev_name(q->backing_dev_info->owner);
+	if (!owner_name)
+		return false;
+
+	return !strcmp(owner_name, "sda") && ra_kb < BLK_READ_AHEAD_FLOOR_KB;
+}
+
 static void blk_sysfs_write_debug(struct request_queue *q, const char *node,
 					 const char *buf, size_t count)
 {
@@ -141,6 +158,9 @@ queue_ra_store(struct request_queue *q, const char *page, size_t count)
 
 	uid = from_kuid_munged(&init_user_ns, current_uid());
 	if (!task_is_booster(current) && uid != 0)
+		return ret;
+
+	if (blk_readahead_floor_locked(q, ra_kb))
 		return ret;
 
 	q->backing_dev_info->ra_pages = ra_kb >> (PAGE_SHIFT - 10);

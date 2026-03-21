@@ -26,6 +26,24 @@ EXPORT_SYMBOL_GPL(noop_backing_dev_info);
 static struct class *bdi_class;
 static const char *bdi_unknown_name = "(unknown)";
 
+#define BDI_READ_AHEAD_FLOOR_KB 512
+
+static bool bdi_readahead_floor_locked(struct backing_dev_info *bdi,
+				       unsigned long read_ahead_kb)
+{
+	const char *owner_name;
+
+	if (!bdi || !bdi->owner)
+		return false;
+
+	owner_name = dev_name(bdi->owner);
+	if (!owner_name)
+		return false;
+
+	return !strcmp(owner_name, "sda") &&
+	       read_ahead_kb < BDI_READ_AHEAD_FLOOR_KB;
+}
+
 /*
  * bdi_lock protects bdi_tree and updates to bdi_list. bdi_list has RCU
  * reader side locking.
@@ -175,6 +193,9 @@ static ssize_t read_ahead_kb_store(struct device *dev,
 	ret = kstrtoul(buf, 10, &read_ahead_kb);
 	if (ret < 0)
 		return ret;
+
+	if (bdi_readahead_floor_locked(bdi, read_ahead_kb))
+		return count;
 
 	bdi->ra_pages = read_ahead_kb >> (PAGE_SHIFT - 10);
 
