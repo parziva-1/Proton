@@ -14508,6 +14508,17 @@
 			active-ratio = <0x19 0x64 0x64>;
 		};
 
+		fclamp {
+			max-freq = <0x119400 0x00 0x00>;
+			max-target-period = <0x04 0x00 0x00>;
+			max-target-ratio = <0x50 0x00 0x00>;
+
+			monitor-group {
+				top-app = <0x01>;
+				foreground = <0x01>;
+			};
+		};
+
 		ecs {
 
 			stage0 {
@@ -14796,6 +14807,13 @@
 		frt {
 			active-ratio = <0x5a 0x64 0x64>;
 		};
+
+		fclamp {
+
+			monitor-group {
+				top-app = <0x01>;
+			};
+		};
 	};
 
 	set@0101 {
@@ -14979,6 +14997,17 @@
 
 		frt {
 			active-ratio = <0x19 0x64 0x64>;
+		};
+
+		fclamp {
+			max-freq = <0x148200 0x00 0x00>;
+			max-target-period = <0x04 0x00 0x00>;
+			max-target-ratio = <0x50 0x00 0x00>;
+
+			monitor-group {
+				top-app = <0x01>;
+				foreground = <0x01>;
+			};
 		};
 	};
 
@@ -15167,6 +15196,13 @@
 			active-ratio = <0x32 0x64 0x64>;
 		};
 
+		fclamp {
+
+			monitor-group {
+				top-app = <0x01>;
+			};
+		};
+
 		ecs {
 
 			stage0 {
@@ -15351,6 +15387,17 @@
 
 		frt {
 			active-ratio = <0x4b 0x64 0x64>;
+		};
+
+		fclamp {
+			max-freq = <0x119400 0x00 0x266038>;
+			max-target-period = <0x04 0x00 0x04>;
+			max-target-ratio = <0x50 0x00 0x50>;
+
+			monitor-group {
+				top-app = <0x01>;
+				foreground = <0x01>;
+			};
 		};
 
 		ecs {
@@ -15829,6 +15876,17 @@
 
 		frt {
 			active-ratio = <0x19 0x64 0x64>;
+		};
+
+		fclamp {
+			max-freq = <0x119400 0x00 0x00>;
+			max-target-period = <0x04 0x00 0x00>;
+			max-target-ratio = <0x50 0x00 0x00>;
+
+			monitor-group {
+				top-app = <0x01>;
+				foreground = <0x01>;
+			};
 		};
 
 		ecs {

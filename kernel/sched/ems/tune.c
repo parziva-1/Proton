@@ -1556,6 +1556,23 @@ show_aio_tuner(struct kobject *k, struct kobj_attribute *attr, char *buf)
 	ret += sprintf(buf + ret, "	(enable=1 disable=0)\n");
 	ret += sprintf(buf + ret, "	(group0/1/2/3=root/fg/bg/ta)\n");
 	ret += sprintf(buf + ret, "\n");
+	ret += sprintf(buf + ret, "[23] fclamp freq\n");
+	ret += sprintf(buf + ret, "	# echo <23,mode,level,cpu,min/max> <freq> > aio_tuner\n");
+	ret += sprintf(buf + ret, "	(min=0 max=1, set one cpu and its coregroup)\n");
+	ret += sprintf(buf + ret, "\n");
+	ret += sprintf(buf + ret, "[24] fclamp target period\n");
+	ret += sprintf(buf + ret, "	# echo <24,mode,level,cpu,min/max> <period> > aio_tuner\n");
+	ret += sprintf(buf + ret, "	(min=0 max=1, set one cpu and its coregroup)\n");
+	ret += sprintf(buf + ret, "\n");
+	ret += sprintf(buf + ret, "[25] fclamp target ratio\n");
+	ret += sprintf(buf + ret, "	# echo <25,mode,level,cpu,min/max> <ratio> > aio_tuner\n");
+	ret += sprintf(buf + ret, "	(min=0 max=1, set one cpu and its coregroup)\n");
+	ret += sprintf(buf + ret, "\n");
+	ret += sprintf(buf + ret, "[26] fclamp monitor group\n");
+	ret += sprintf(buf + ret, "	# echo <26,mode,level,group> <en/dis> > aio_tuner\n");
+	ret += sprintf(buf + ret, "	(enable=1 disable=0)\n");
+	ret += sprintf(buf + ret, "	(group0/1/2/3=root/fg/bg/ta)\n");
+	ret += sprintf(buf + ret, "\n");
 	return ret;
 }
 
@@ -1583,6 +1600,10 @@ enum {
 	esg_rate_limit,
 	esg_rapid_scale,
 	tiny_cd_sched_en,
+	fclamp_freq,
+	fclamp_period,
+	fclamp_ratio,
+	fclamp_monitor_group,
 	field_count,
 };
 
@@ -1985,6 +2006,57 @@ store_aio_tuner(struct kobject *k, struct kobj_attribute *attr,
 		if (sanity_check_convert_value(arg1, VAL_TYPE_ONOFF, 0, &v))
 			return -EINVAL;
 		set->tiny_cd_sched.enabled[group] = v;
+		break;
+	case fclamp_freq:
+		cpu = keys[3];
+		type = !!keys[4];
+		if (sanity_check_option(cpu, 0, type))
+			return -EINVAL;
+		if (sanity_check_convert_value(arg1,
+				VAL_TYPE_LEVEL, 10000000, &v))
+			return -EINVAL;
+		if (type)
+			set_value_coregroup(set->fclamp.max_freq, cpu, v);
+		else
+			set_value_coregroup(set->fclamp.min_freq, cpu, v);
+		set->fclamp.overriding = true;
+		break;
+	case fclamp_period:
+		cpu = keys[3];
+		type = !!keys[4];
+		if (sanity_check_option(cpu, 0, type))
+			return -EINVAL;
+		if (sanity_check_convert_value(arg1,
+				VAL_TYPE_LEVEL, 100, &v))
+			return -EINVAL;
+		if (type)
+			set_value_coregroup(set->fclamp.max_target_period, cpu, v);
+		else
+			set_value_coregroup(set->fclamp.min_target_period, cpu, v);
+		set->fclamp.overriding = true;
+		break;
+	case fclamp_ratio:
+		cpu = keys[3];
+		type = !!keys[4];
+		if (sanity_check_option(cpu, 0, type))
+			return -EINVAL;
+		if (sanity_check_convert_value(arg1,
+				VAL_TYPE_LEVEL, 1000, &v))
+			return -EINVAL;
+		if (type)
+			set_value_coregroup(set->fclamp.max_target_ratio, cpu, v);
+		else
+			set_value_coregroup(set->fclamp.min_target_ratio, cpu, v);
+		set->fclamp.overriding = true;
+		break;
+	case fclamp_monitor_group:
+		group = keys[3];
+		if (sanity_check_option(0, group, 0))
+			return -EINVAL;
+		if (sanity_check_convert_value(arg1, VAL_TYPE_ONOFF, 0, &v))
+			return -EINVAL;
+		set_value_cgroup(set->fclamp.monitor_group, group, v);
+		set->fclamp.overriding = true;
 		break;
 	}
 
