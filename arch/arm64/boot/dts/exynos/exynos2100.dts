@@ -14409,6 +14409,10 @@
 		desc = "normal default";
 		phandle = <0x11b>;
 
+		support_uclamp {
+			enabled = <0x01>;
+		};
+
 		sched_policy {
 			root = <0x00>;
 			foreground = <0x00>;
@@ -14538,6 +14542,10 @@
 		desc = "normal touch boost";
 		phandle = <0x11c>;
 
+		support_uclamp {
+			enabled = <0x01>;
+		};
+
 		sched_policy {
 			root = <0x01>;
 			foreground = <0x00>;
@@ -14613,6 +14621,10 @@
 		idx = <0x02>;
 		desc = "normal extreme boost";
 		phandle = <0x11d>;
+
+		support_uclamp {
+			enabled = <0x01>;
+		};
 
 		sched_policy {
 			root = <0x00>;
@@ -14691,6 +14703,10 @@
 		idx = <0x64>;
 		desc = "power-scenario default";
 		phandle = <0x11e>;
+
+		support_uclamp {
+			enabled = <0x01>;
+		};
 
 		sched_policy {
 			root = <0x01>;
@@ -14787,6 +14803,10 @@
 		desc = "power-scenario touch boost";
 		phandle = <0x11f>;
 
+		support_uclamp {
+			enabled = <0x01>;
+		};
+
 		sched_policy {
 			root = <0x00>;
 			foreground = <0x00>;
@@ -14817,6 +14837,10 @@
 		idx = <0x66>;
 		desc = "power-scenario extreme boost";
 		phandle = <0x120>;
+
+		support_uclamp {
+			enabled = <0x01>;
+		};
 
 		sched_policy {
 			root = <0x00>;
@@ -14857,6 +14881,10 @@
 		idx = <0xc8>;
 		desc = "performance default";
 		phandle = <0x121>;
+
+		support_uclamp {
+			enabled = <0x01>;
+		};
 
 		sched_policy {
 			root = <0x00>;
@@ -14959,6 +14987,10 @@
 		desc = "performance touch boost";
 		phandle = <0x122>;
 
+		support_uclamp {
+			enabled = <0x01>;
+		};
+
 		weight {
 			root = <0x64 0x64 0x64>;
 			foreground = <0x64 0x64 0x64>;
@@ -14996,6 +15028,10 @@
 		idx = <0xca>;
 		desc = "performance extreme boost";
 		phandle = <0x123>;
+
+		support_uclamp {
+			enabled = <0x01>;
+		};
 
 		sched_policy {
 			root = <0x00>;
@@ -15036,6 +15072,10 @@
 		idx = <0x12c>;
 		desc = "game default";
 		phandle = <0x124>;
+
+		support_uclamp {
+			enabled = <0x01>;
+		};
 
 		sched_policy {
 			root = <0x05>;
@@ -15154,6 +15194,10 @@
 		desc = "game touch boost";
 		phandle = <0x125>;
 
+		support_uclamp {
+			enabled = <0x01>;
+		};
+
 		ecs {
 		};
 	};
@@ -15162,6 +15206,10 @@
 		idx = <0x12e>;
 		desc = "game extreme boost";
 		phandle = <0x126>;
+
+		support_uclamp {
+			enabled = <0x01>;
+		};
 
 		sched_policy {
 			root = <0x00>;
@@ -15205,6 +15253,10 @@
 		idx = <0x190>;
 		desc = "balance default";
 		phandle = <0x127>;
+
+		support_uclamp {
+			enabled = <0x01>;
+		};
 
 		sched_policy {
 			root = <0x01>;
@@ -15328,6 +15380,10 @@
 		desc = "balance touch boost";
 		phandle = <0x128>;
 
+		support_uclamp {
+			enabled = <0x01>;
+		};
+
 		sched_policy {
 			root = <0x00>;
 			foreground = <0x00>;
@@ -15361,6 +15417,10 @@
 		idx = <0x192>;
 		desc = "balance extreme boost";
 		phandle = <0x129>;
+
+		support_uclamp {
+			enabled = <0x01>;
+		};
 
 		sched_policy {
 			root = <0x00>;
@@ -15404,6 +15464,10 @@
 		idx = <0x1f4>;
 		desc = "camera default";
 		phandle = <0x12a>;
+
+		support_uclamp {
+			enabled = <0x01>;
+		};
 
 		sched_policy {
 			root = <0x00>;
@@ -15527,6 +15591,10 @@
 		desc = "camera touch boost";
 		phandle = <0x12b>;
 
+		support_uclamp {
+			enabled = <0x01>;
+		};
+
 		weight {
 			root = <0x64 0x64 0x64>;
 			foreground = <0x64 0x64 0x64>;
@@ -15588,6 +15656,10 @@
 		idx = <0x1f6>;
 		desc = "camera extreme boost";
 		phandle = <0x12c>;
+
+		support_uclamp {
+			enabled = <0x01>;
+		};
 
 		sched_policy {
 			root = <0x00>;
@@ -15659,6 +15731,10 @@
 		idx = <0x258>;
 		desc = "camera sub mode 1 default";
 		phandle = <0x12d>;
+
+		support_uclamp {
+			enabled = <0x01>;
+		};
 
 		sched_policy {
 			root = <0x00>;
@@ -15782,6 +15858,10 @@
 		desc = "camera sub mode 2 default";
 		phandle = <0x12e>;
 
+		support_uclamp {
+			enabled = <0x01>;
+		};
+
 		sched_policy {
 			root = <0x00>;
 			foreground = <0x00>;
@@ -15904,6 +15984,10 @@
 		desc = "camera sub mode 3 default";
 		phandle = <0x12f>;
 
+		support_uclamp {
+			enabled = <0x01>;
+		};
+
 		sched_policy {
 			root = <0x01>;
 			foreground = <0x01>;
@@ -15998,6 +16082,10 @@
 		idx = <0x384>;
 		desc = "camera sub mode 4 default";
 		phandle = <0x130>;
+
+		support_uclamp {
+			enabled = <0x01>;
+		};
 
 		sched_policy {
 			root = <0x00>;
@@ -16121,6 +16209,10 @@
 		desc = "gameSDK sub mode 0 default";
 		phandle = <0x131>;
 
+		support_uclamp {
+			enabled = <0x01>;
+		};
+
 		sched_policy {
 			root = <0x00>;
 			foreground = <0x00>;
@@ -16232,6 +16324,10 @@
 		desc = "gameSDK touch boost";
 		phandle = <0x132>;
 
+		support_uclamp {
+			enabled = <0x01>;
+		};
+
 		sched_policy {
 			root = <0x01>;
 			foreground = <0x00>;
@@ -16300,6 +16396,10 @@
 		idx = <0x3ea>;
 		desc = "gameSDK extreme boost";
 		phandle = <0x133>;
+
+		support_uclamp {
+			enabled = <0x01>;
+		};
 
 		sched_policy {
 			root = <0x00>;
@@ -16371,6 +16471,10 @@
 		idx = <0x44c>;
 		desc = "gameSDK sub mode 1 default";
 		phandle = <0x134>;
+
+		support_uclamp {
+			enabled = <0x01>;
+		};
 
 		sched_policy {
 			root = <0x01>;
@@ -16467,6 +16571,10 @@
 		desc = "gameSDK sub mode 2 default";
 		phandle = <0x135>;
 
+		support_uclamp {
+			enabled = <0x01>;
+		};
+
 		sched_policy {
 			root = <0x01>;
 			foreground = <0x01>;
@@ -16561,6 +16669,10 @@
 		idx = <0x514>;
 		desc = "gameSDK sub mode 3 default";
 		phandle = <0x136>;
+
+		support_uclamp {
+			enabled = <0x01>;
+		};
 
 		sched_policy {
 			root = <0x01>;
@@ -16657,6 +16769,10 @@
 		desc = "gameSDK sub mode 4 default";
 		phandle = <0x137>;
 
+		support_uclamp {
+			enabled = <0x01>;
+		};
+
 		sched_policy {
 			root = <0x01>;
 			foreground = <0x01>;
@@ -16751,6 +16867,10 @@
 		idx = <0x5dc>;
 		desc = "browser default";
 		phandle = <0x138>;
+
+		support_uclamp {
+			enabled = <0x01>;
+		};
 
 		sched_policy {
 			root = <0x00>;
@@ -16874,6 +16994,10 @@
 		desc = "browser touch boost";
 		phandle = <0x139>;
 
+		support_uclamp {
+			enabled = <0x01>;
+		};
+
 		sched_policy {
 			root = <0x01>;
 			foreground = <0x00>;
@@ -16942,6 +17066,10 @@
 		idx = <0x5de>;
 		desc = "browser extreme boost";
 		phandle = <0x13a>;
+
+		support_uclamp {
+			enabled = <0x01>;
+		};
 
 		sched_policy {
 			root = <0x00>;
