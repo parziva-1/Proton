@@ -79,6 +79,39 @@ parse_coregroup_field(struct device_node *dn, const char *name,
 	return 0;
 }
 
+static inline void
+parse_coregroup_field_default(struct device_node *dn, const char *name,
+				int (field)[VENDOR_NR_CPUS], int default_value)
+{
+	int count, cpu, cursor;
+	u32 val[VENDOR_NR_CPUS];
+
+	for (count = 0; count < VENDOR_NR_CPUS; count++)
+		val[count] = default_value;
+
+	if (!dn)
+		goto out;
+
+	count = of_property_count_u32_elems(dn, name);
+	if (count < 0)
+		goto out;
+
+	if (of_property_read_u32_array(dn, name, (u32 *)&val, count))
+		goto out;
+
+out:
+	count = 0;
+	for_each_possible_cpu(cpu) {
+		if (cpu != cpumask_first(cpu_coregroup_mask(cpu)))
+			continue;
+
+		for_each_cpu(cursor, cpu_coregroup_mask(cpu))
+			field[cursor] = val[count];
+
+		count++;
+	}
+}
+
 static inline int
 parse_cgroup_field(struct device_node *dn, int *field)
 {
@@ -95,6 +128,19 @@ parse_cgroup_field(struct device_node *dn, int *field)
 	}
 
 	return 0;
+}
+
+static inline void
+parse_cgroup_field_default(struct device_node *dn, int *field, int default_value)
+{
+	int group, val;
+
+	for (group = 0; group < STUNE_GROUP_COUNT; group++) {
+		if (!dn || of_property_read_u32(dn, stune_group_name[group], &val))
+			field[group] = default_value;
+		else
+			field[group] = val;
+	}
 }
 
 static inline int
@@ -190,6 +236,7 @@ static void __update_cur_set(struct emstune_set *next_set)
 	update_cur_set_field(idle_weight);
 	update_cur_set_field(freq_boost);
 	update_cur_set_field(wakeup_boost);
+	update_cur_set_field(fclamp);
 	update_cur_set_field(esg);
 	update_cur_set_field(ontime);
 	update_cur_set_field(cpus_allowed);
@@ -531,6 +578,34 @@ int emstune_tiny_cd_sched(struct task_struct *p)
 	st_idx = cpuctl_task_group_idx(p);
 
 	return cur_set.tiny_cd_sched.enabled[st_idx];
+}
+
+static int
+parse_fclamp(struct device_node *dn, struct emstune_set *set)
+{
+	struct emstune_fclamp *fclamp = &set->fclamp;
+	struct device_node *monitor_dn;
+
+	parse_coregroup_field_default(dn, "min-freq", fclamp->min_freq, 0);
+	parse_coregroup_field_default(dn, "min-target-period",
+			fclamp->min_target_period, 0);
+	parse_coregroup_field_default(dn, "min-target-ratio",
+			fclamp->min_target_ratio, 0);
+	parse_coregroup_field_default(dn, "max-freq", fclamp->max_freq, 0);
+	parse_coregroup_field_default(dn, "max-target-period",
+			fclamp->max_target_period, 0);
+	parse_coregroup_field_default(dn, "max-target-ratio",
+			fclamp->max_target_ratio, 0);
+
+	monitor_dn = of_get_child_by_name(dn, "monitor-group");
+	parse_cgroup_field_default(monitor_dn, fclamp->monitor_group, 0);
+	of_node_put(monitor_dn);
+
+	fclamp->overriding = true;
+
+	of_node_put(dn);
+
+	return 0;
 }
 
 int emstune_support_uclamp(void)
@@ -1230,6 +1305,28 @@ show_cur_set(struct kobject *k, struct kobj_attribute *attr, char *buf)
 	}
 	ret += scnprintf(buf + ret, PAGE_SIZE - ret, "\n");
 
+	ret += scnprintf(buf + ret, PAGE_SIZE - ret, "[fclamp]\n");
+	ret += scnprintf(buf + ret, PAGE_SIZE - ret, "      min-freq min-pd min-r max-freq max-pd max-r\n");
+	for_each_possible_cpu(cpu) {
+		if (cpu != cpumask_first(cpu_coregroup_mask(cpu)))
+			continue;
+		ret += scnprintf(buf + ret, PAGE_SIZE - ret,
+				"cpu%d:%9d %6d %5d %8d %6d %5d\n",
+				cpu,
+				cur_set.fclamp.min_freq[cpu],
+				cur_set.fclamp.min_target_period[cpu],
+				cur_set.fclamp.min_target_ratio[cpu],
+				cur_set.fclamp.max_freq[cpu],
+				cur_set.fclamp.max_target_period[cpu],
+				cur_set.fclamp.max_target_ratio[cpu]);
+	}
+	ret += scnprintf(buf + ret, PAGE_SIZE - ret, "monitor:");
+	for (group = 0; group < STUNE_GROUP_COUNT; group++)
+		ret += scnprintf(buf + ret, PAGE_SIZE - ret, " %s=%d",
+				stune_group_simple_name[group],
+				cur_set.fclamp.monitor_group[group]);
+	ret += scnprintf(buf + ret, PAGE_SIZE - ret, "\n\n");
+
 	ret += scnprintf(buf + ret, PAGE_SIZE - ret, "[esg]\n");
 	ret += scnprintf(buf + ret, PAGE_SIZE - ret, "      step patient margin  boost\n");
 	for_each_possible_cpu(cpu) {
@@ -1925,6 +2022,7 @@ emstune_set_init(struct device_node *dn, struct emstune_set *set)
 	parse(idle_weight);
 	parse(freq_boost);
 	parse(wakeup_boost);
+	parse(fclamp);
 	parse(esg);
 	parse(ontime);
 	parse(cpus_allowed);

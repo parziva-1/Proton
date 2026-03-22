@@ -1,6 +1,7 @@
 obj-y += core.o energy.o multi_load.o ontime.o
 obj-y += sparing.o
 obj-y += cpu_select.o
+obj-y += cpufreq.o
 obj-y += freq_boost.o
 obj-y += hook.o
 obj-y += sysbusy.o

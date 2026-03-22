@@ -776,6 +776,7 @@ static unsigned int get_next_freq(struct esgov_policy *esg_policy,
 	freq = (policy->cpuinfo.max_freq * util) / max;
 
 	freq = cpufreq_driver_resolve_freq(policy, freq);
+	freq = fclamp_apply(policy, freq);
 	return clamp_val(freq, esg_policy->min, esg_policy->max);
 }
 

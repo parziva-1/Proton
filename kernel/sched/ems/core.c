@@ -1046,6 +1046,7 @@ static int ems_init(void)
 	hook_init();
 	energy_table_init();
 	part_init();
+	cpufreq_init();
 	ontime_init();
 	esgov_pre_init();
 	freqboost_init();

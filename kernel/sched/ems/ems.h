@@ -150,6 +150,17 @@ extern bool freqboost_cpu_boost_group_active(int idx, int cpu, u64 now);
 extern int freqboost_wakeup_boost(int cpu, int util);
 extern int freqboost_wakeup_boost_pending(int cpu);
 
+/* cpufreq/fclamp */
+struct fclamp_data {
+	int freq;
+	int target_period;
+	int target_ratio;
+	int type;
+};
+
+extern int cpufreq_init(void);
+extern unsigned int fclamp_apply(struct cpufreq_policy *policy, unsigned int orig_freq);
+
 /* frt */
 extern int frt_init(void);
 extern void frt_update_available_cpus(struct rq *rq);
@@ -210,6 +221,18 @@ struct emstune_freq_boost {
 struct emstune_wakeup_boost {
 	bool overriding;
 	int ratio[STUNE_GROUP_COUNT][VENDOR_NR_CPUS];
+};
+
+/* emstune - frequency clamp */
+struct emstune_fclamp {
+	bool overriding;
+	int min_freq[VENDOR_NR_CPUS];
+	int min_target_period[VENDOR_NR_CPUS];
+	int min_target_ratio[VENDOR_NR_CPUS];
+	int max_freq[VENDOR_NR_CPUS];
+	int max_target_period[VENDOR_NR_CPUS];
+	int max_target_ratio[VENDOR_NR_CPUS];
+	int monitor_group[STUNE_GROUP_COUNT];
 };
 
 /* emstune - energy step governor */
@@ -294,6 +317,7 @@ struct emstune_set {
 	struct emstune_idle_weight	idle_weight;
 	struct emstune_freq_boost	freq_boost;
 	struct emstune_wakeup_boost	wakeup_boost;
+	struct emstune_fclamp		fclamp;
 	struct emstune_esg		esg;
 	struct emstune_ontime		ontime;
 	struct emstune_prio_pinning	prio_pinning;
