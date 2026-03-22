@@ -38,8 +38,8 @@
  *
  * (default: 6ms * (1 + ilog(ncpus)), units: nanoseconds)
  */
-unsigned int sysctl_sched_latency			= 4000000ULL;
-static unsigned int normalized_sysctl_sched_latency	= 4000000ULL;
+unsigned int sysctl_sched_latency			= 10000000ULL;
+static unsigned int normalized_sysctl_sched_latency	= 10000000ULL;
 
 /*
  * The initial- and re-scaling of tunables is configurable
@@ -59,8 +59,8 @@ enum sched_tunable_scaling sysctl_sched_tunable_scaling = SCHED_TUNABLESCALING_N
  *
  * (default: 0.75 msec * (1 + ilog(ncpus)), units: nanoseconds)
  */
-unsigned int sysctl_sched_min_granularity			= 500000ULL;
-static unsigned int normalized_sysctl_sched_min_granularity	= 500000ULL;
+unsigned int sysctl_sched_min_granularity			= 2000000ULL;
+static unsigned int normalized_sysctl_sched_min_granularity	= 2000000ULL;
 
 /*
  * This value is kept at sysctl_sched_latency/sysctl_sched_min_granularity
@@ -71,7 +71,7 @@ static unsigned int sched_nr_latency = 8;
  * After fork, child runs first. If set to 0 (default) then
  * parent will (try to) run first.
  */
-unsigned int sysctl_sched_child_runs_first __read_mostly = 0;
+unsigned int sysctl_sched_child_runs_first __read_mostly = 1;
 
 /*
  * SCHED_OTHER wake-up granularity.
@@ -82,18 +82,18 @@ unsigned int sysctl_sched_child_runs_first __read_mostly = 0;
  *
  * (default: 1 msec * (1 + ilog(ncpus)), units: nanoseconds)
  */
-unsigned int sysctl_sched_wakeup_granularity			= 2000000UL;
-static unsigned int normalized_sysctl_sched_wakeup_granularity	= 2000000UL;
+unsigned int sysctl_sched_wakeup_granularity			= 3000000UL;
+static unsigned int normalized_sysctl_sched_wakeup_granularity	= 3000000UL;
 
-const_debug unsigned int sysctl_sched_migration_cost	= 1000000UL;
+const_debug unsigned int sysctl_sched_migration_cost	= 5000000UL;
 
 #ifdef CONFIG_SMP
 /*
- * For asym packing, by default the lower numbered CPU has higher priority.
+ * For asym packing, by default the lower max-capacity CPU has higher priority.
  */
 int __weak arch_asym_cpu_priority(int cpu)
 {
-	return -cpu;
+	return -arch_scale_cpu_capacity(cpu);
 }
 
 /*
@@ -102,6 +102,14 @@ int __weak arch_asym_cpu_priority(int cpu)
  * (default: ~20%)
  */
 #define fits_capacity(cap, max)	((cap) * 1280 < (max) * 1024)
+
+/*
+ * The margin used when comparing CPU capacities.
+ * is 'cap1' noticeably greater than 'cap2'
+ *
+ * (default: ~5%)
+ */
+#define capacity_greater(cap1, cap2) ((cap1) * 1024 > (cap2) * 1078)
 
 #endif
 
