@@ -580,34 +580,6 @@ int emstune_tiny_cd_sched(struct task_struct *p)
 	return cur_set.tiny_cd_sched.enabled[st_idx];
 }
 
-static int
-parse_fclamp(struct device_node *dn, struct emstune_set *set)
-{
-	struct emstune_fclamp *fclamp = &set->fclamp;
-	struct device_node *monitor_dn;
-
-	parse_coregroup_field_default(dn, "min-freq", fclamp->min_freq, 0);
-	parse_coregroup_field_default(dn, "min-target-period",
-			fclamp->min_target_period, 0);
-	parse_coregroup_field_default(dn, "min-target-ratio",
-			fclamp->min_target_ratio, 0);
-	parse_coregroup_field_default(dn, "max-freq", fclamp->max_freq, 0);
-	parse_coregroup_field_default(dn, "max-target-period",
-			fclamp->max_target_period, 0);
-	parse_coregroup_field_default(dn, "max-target-ratio",
-			fclamp->max_target_ratio, 0);
-
-	monitor_dn = of_get_child_by_name(dn, "monitor-group");
-	parse_cgroup_field_default(monitor_dn, fclamp->monitor_group, 0);
-	of_node_put(monitor_dn);
-
-	fclamp->overriding = true;
-
-	of_node_put(dn);
-
-	return 0;
-}
-
 int emstune_support_uclamp(void)
 {
 	if (unlikely(!emstune_initialized))
