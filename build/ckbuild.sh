@@ -121,7 +121,7 @@ BUILD_LOG=1
 CLANG_TYPE=aosp
 
 ## Info message
-LINKER=ld.lld
+LINKER="${LINKER:-ld.lld}"
 DEVICE="Galaxy S21 Series"
 CODENAME="exynos2100"
 
@@ -411,8 +411,8 @@ build() {
     export ANDROID_MAJOR_VERSION=r
     export TARGET_SOC=exynos2100
 
-    export LLVM=1
-    export LLVM_IAS=1
+    export LLVM="${LLVM:-1}"
+    export LLVM_IAS="${LLVM_IAS:-1}"
     export ARCH=arm64
     VERSION_STR="\"-ProtonPlus-$K_VER\""
     if [ "$BUILD_TYPE_DEFAULT" != "1" ]; then
@@ -423,10 +423,10 @@ build() {
     rm -f $OUT_KERNEL
     rm -rf "$MOD_OUTDIR"
 
-    make -j$(nproc --all) O=out CC="clang" CROSS_COMPILE="$CCARM64_PREFIX" $DEFCONFIG $([[ "$DO_KSU" == "1" ]] && echo "ksu.config") 2>&1 | tee log.txt
+    make -j$(nproc --all) O=out CC="clang" LD="$LINKER" CROSS_COMPILE="$CCARM64_PREFIX" $DEFCONFIG $([[ "$DO_KSU" == "1" ]] && echo "ksu.config") 2>&1 | tee log.txt
 
     if [ $DO_MENUCONFIG = "1" ]; then
-        make O=out menuconfig 2>&1 >> log.txt
+        make O=out LD="$LINKER" menuconfig 2>&1 >> log.txt
     fi
 
     if [[ "$DO_REGEN" = "1" ]]; then
@@ -470,13 +470,13 @@ build() {
     ## Start the build
     echo -e "\n${C_CYAN}INFO:${C_RST} Starting compilation...\n"
 
-    make -j$(nproc --all) O=out CC="clang" CROSS_COMPILE="$CCARM64_PREFIX" dtbs 2>&1 | tee -a log.txt
+    make -j$(nproc --all) O=out CC="clang" LD="$LINKER" CROSS_COMPILE="$CCARM64_PREFIX" dtbs 2>&1 | tee -a log.txt
     if [ $USE_CCACHE = "1" ]; then
-        make -j$(nproc --all) O=out CC="ccache clang" CROSS_COMPILE="$CCARM64_PREFIX" 2>&1 | tee -a log.txt
+        make -j$(nproc --all) O=out CC="ccache clang" LD="$LINKER" CROSS_COMPILE="$CCARM64_PREFIX" 2>&1 | tee -a log.txt
     else
-        make -j$(nproc --all) O=out CC="clang" CROSS_COMPILE="$CCARM64_PREFIX" 2>&1 | tee -a log.txt
+        make -j$(nproc --all) O=out CC="clang" LD="$LINKER" CROSS_COMPILE="$CCARM64_PREFIX" 2>&1 | tee -a log.txt
     fi
-    make -j$(nproc --all) O=out CC="clang" CROSS_COMPILE="$CCARM64_PREFIX" INSTALL_MOD_STRIP="--strip-debug --keep-section=.ARM.attributes" INSTALL_MOD_PATH="$MOD_OUTDIR" modules_install 2>&1 | tee -a log.txt
+    make -j$(nproc --all) O=out CC="clang" LD="$LINKER" CROSS_COMPILE="$CCARM64_PREFIX" INSTALL_MOD_STRIP="--strip-debug --keep-section=.ARM.attributes" INSTALL_MOD_PATH="$MOD_OUTDIR" modules_install 2>&1 | tee -a log.txt
 }
 
 packing() {

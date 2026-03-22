@@ -101,7 +101,7 @@ BUILD_LOG=1
 CLANG_TYPE=aosp
 
 ## Info message
-LINKER=ld.lld
+LINKER="${LINKER:-ld.lld}"
 DEVICE="Galaxy S21 FE"
 CODENAME="r9s"
 
@@ -257,13 +257,18 @@ prep_toolchain() {
 get_toolchain $CLANG_TYPE
 prep_toolchain $CLANG_TYPE
 
+LINKER_BIN="$(command -v "$LINKER" 2>/dev/null || true)"
+if [ -z "$LINKER_BIN" ]; then
+    LINKER_BIN="$LINKER"
+fi
+
 ## Telegram info variables
 
 CAPTION_BUILD="Build info:
 *Device*: \`${DEVICE} [${CODENAME}]\`
 *Kernel Version*: \`${LINUX_VER}\`
 *Compiler*: \`${KBUILD_COMPILER_STRING}\`
-*Linker*: \`$("$CLANG_DIR"/bin/${LINKER} -v | head -n1 | sed 's/(compatible with [^)]*)//' |
+*Linker*: \`$("$LINKER_BIN" -v | head -n1 | sed 's/(compatible with [^)]*)//' |
             head -n 1 | perl -pe 's/\(http.*?\)//gs' | sed -e 's/  */ /g' -e 's/[[:space:]]*$//')\`
 *Build host*: \`${BUILD_HOST}\`
 *Branch*: \`$(git rev-parse --abbrev-ref HEAD)\`
@@ -305,8 +310,8 @@ build() {
     export ANDROID_MAJOR_VERSION=r
     export TARGET_SOC=exynos2100
 
-    export LLVM=1
-    export LLVM_IAS=1
+    export LLVM="${LLVM:-1}"
+    export LLVM_IAS="${LLVM_IAS:-1}"
     export ARCH=arm64
     VERSION_STR="\"-ProtonPlus-$K_VER\""
 
@@ -314,10 +319,10 @@ build() {
     rm -f $OUT_KERNEL
     rm -rf "$MOD_OUTDIR"
 
-    make -j$(nproc --all) O=out CC="clang" CROSS_COMPILE="$CCARM64_PREFIX" $DEFCONFIG $([[ "$DO_KSU" == "1" ]] && echo "ksu.config") 2>&1 | tee log.txt
+    make -j$(nproc --all) O=out CC="clang" LD="$LINKER" CROSS_COMPILE="$CCARM64_PREFIX" $DEFCONFIG $([[ "$DO_KSU" == "1" ]] && echo "ksu.config") 2>&1 | tee log.txt
 
     if [ $DO_MENUCONFIG = "1" ]; then
-        make O=out menuconfig
+        make O=out LD="$LINKER" menuconfig
     fi
 
     if [[ "$DO_REGEN" = "1" ]]; then
@@ -340,13 +345,13 @@ build() {
     ## Start the build
     echo -e "\nINFO: Starting compilation...\n"
 
-    make -j$(nproc --all) O=out CC="clang" CROSS_COMPILE="$CCARM64_PREFIX" dtbs 2>&1 | tee log.txt
+    make -j$(nproc --all) O=out CC="clang" LD="$LINKER" CROSS_COMPILE="$CCARM64_PREFIX" dtbs 2>&1 | tee log.txt
     if [ $USE_CCACHE = "1" ]; then
-        make -j$(nproc --all) O=out CC="ccache clang" CROSS_COMPILE="$CCARM64_PREFIX" 2>&1 | tee log.txt
+        make -j$(nproc --all) O=out CC="ccache clang" LD="$LINKER" CROSS_COMPILE="$CCARM64_PREFIX" 2>&1 | tee log.txt
     else
-        make -j$(nproc --all) O=out CC="clang" CROSS_COMPILE="$CCARM64_PREFIX" 2>&1 | tee log.txt
+        make -j$(nproc --all) O=out CC="clang" LD="$LINKER" CROSS_COMPILE="$CCARM64_PREFIX" 2>&1 | tee log.txt
     fi
-    make -j$(nproc --all) O=out CC="clang" CROSS_COMPILE="$CCARM64_PREFIX" INSTALL_MOD_STRIP="--strip-debug --keep-section=.ARM.attributes" INSTALL_MOD_PATH="$MOD_OUTDIR" modules_install 2>&1 | tee log.txt
+    make -j$(nproc --all) O=out CC="clang" LD="$LINKER" CROSS_COMPILE="$CCARM64_PREFIX" INSTALL_MOD_STRIP="--strip-debug --keep-section=.ARM.attributes" INSTALL_MOD_PATH="$MOD_OUTDIR" modules_install 2>&1 | tee log.txt
 }
 
 packing() {
