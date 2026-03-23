@@ -58,8 +58,7 @@ static int exynos_ecc_handler_probe(struct platform_device *pdev)
 			dev_info(&pdev->dev, "Success to request irq%u "
 					"for ecc handler[%s]\n", irq, name);
 		}
-		if (!IS_ENABLED(CONFIG_IRQ_SBALANCE))
-			irq_set_affinity_hint(irq, cpu_possible_mask);
+		irq_set_affinity_hint(irq, cpu_possible_mask);
 	}
 
 	return err;
