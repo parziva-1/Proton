@@ -24,13 +24,6 @@ config MQ_IOSCHED_KYBER
 	  synchronous writes, it will self-tune queue depths to achieve that
 	  goal.
 
-config MQ_IOSCHED_ADIOS
-	tristate "Adaptive Deadline I/O scheduler"
-	default m
-	help
-	  The Adaptive Deadline I/O Scheduler (ADIOS) is a multi-queue I/O
-	  scheduler with learning-based adaptive latency control.
-
 config IOSCHED_BFQ
 	tristate "BFQ I/O scheduler"
 	---help---
@@ -91,10 +84,6 @@ config BFQ_DEFAULT
 config MQ_SSG_DEFAULT
 	bool "SamSung Generic I/O scheduler"
 	depends on MQ_IOSCHED_SSG
-
-config MQ_ADIOS_DEFAULT
-	bool "Adaptive Deadline"
-	depends on MQ_IOSCHED_ADIOS
 
 config NONE_DEFAULT
 	bool "NONE"
