@@ -631,6 +631,32 @@ int fvmap_get_raw_voltage_table(unsigned int id)
 	return 0;
 }
 
+static void fvmap_override_g3d_949_volt(struct rate_volt_header *fv_table, int num_of_lv)
+{
+	int i;
+	int top_idx = -1;
+	int base_idx = -1;
+
+	for (i = 0; i < num_of_lv; i++) {
+		if (fv_table->table[i].rate == 949000)
+			top_idx = i;
+		else if (fv_table->table[i].rate == 858000)
+			base_idx = i;
+	}
+
+	if (top_idx < 0 || base_idx < 0)
+		return;
+
+	if (fv_table->table[top_idx].volt == fv_table->table[base_idx].volt)
+		return;
+
+	pr_info("fvmap: override G3D %u kHz voltage %u uV -> %u uV (same as %u kHz before margin)\n",
+		fv_table->table[top_idx].rate, fv_table->table[top_idx].volt * STEP_UV,
+		fv_table->table[base_idx].volt * STEP_UV, fv_table->table[base_idx].rate);
+
+	fv_table->table[top_idx].volt = fv_table->table[base_idx].volt;
+}
+
 static void fvmap_copy_from_sram(void __iomem *map_base, void __iomem *sram_base)
 {
 	volatile struct fvmap_header *fvmap_header, *header;
@@ -679,6 +705,13 @@ static void fvmap_copy_from_sram(void __iomem *map_base, void __iomem *sram_base
 #endif
 		old = sram_base + fvmap_header[i].o_ratevolt;
 		new = map_base + fvmap_header[i].o_ratevolt;
+
+		/*
+		 * Keep 949 MHz on the same raw voltage step as 858 MHz so any
+		 * later G3D undervolt margin still applies equally to both.
+		 */
+		if (vclk->margin_id == MARGIN_G3D)
+			fvmap_override_g3d_949_volt(old, fvmap_header[i].num_of_lv);
 
 		margin = init_margin_table[vclk->margin_id];
 		if (margin)
