@@ -14370,6 +14370,8 @@
 		sec,wb-disable-threshold-lt = <0x09>;
 		sec,wb-on-delay-ms = <0x5c>;
 		sec,wb-off-delay-ms = <0x1194>;
+		perf-count-l = <0x08>;
+		perf-period-in-ms-l = <0x0c>;
 		phandle = <0x321>;
 
 		phy-tcxo-con {
