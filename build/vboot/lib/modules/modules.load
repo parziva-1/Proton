@@ -207,20 +207,7 @@ sec_class.ko
 sec_bootstat.ko
 sec_argos.ko
 sec_debug.ko
-sec_debug_test.ko
-sec_debug_dprm.ko
 sec_debug_extra_info.ko
-sec_debug_hw_param.ko
-sec_debug_reset_reason.ko
-sec_debug_wdd_info.ko
-sec_debug_hist.ko
-sec_debug_summary.ko
-sec_debug_softdog.ko
-sec_debug_logbuf_interface.ko
-sec_debug_stacktrace.ko
-sec_debug_hardlockup_info.ko
-sec_debug_sched_report.ko
-sec_debug_sched_info.ko
 dev_ril_bridge.ko
 sec_vibrator.ko
 max77705-charger.ko
@@ -286,3 +273,4 @@ unbound_prince.ko
 tcp_westwood.ko
 tcp_htcp.ko
 input_booster_lkm.ko
+ssg.ko
