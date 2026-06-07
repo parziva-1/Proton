@@ -265,8 +265,8 @@ get_toolchain() {
         if ! [ -d "$AC_DIR" ]; then
             # --- MODIFICATION START ---
             # Hardcode the specific AOSP Clang version and URL
-            AOSP_CLANG_VERSION="clang-r563880"
-            AOSP_CLANG_URL="https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/mirror-goog-main-llvm-toolchain-source/clang-r563880.tar.gz"
+            AOSP_CLANG_VERSION="clang-r596125"
+            AOSP_CLANG_URL="https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/mirror-goog-main-llvm-toolchain-source/clang-r596125.tar.gz"
             AOSP_CLANG_TARBALL="${AOSP_CLANG_VERSION}.tar.gz"
 
             echo -e "\nINFO: AOSP Clang not found! Downloading specific version ($AOSP_CLANG_VERSION)..."
