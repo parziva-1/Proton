@@ -9,6 +9,16 @@ on:
 jobs:
   build-kernel:
     runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: full
+            disable: ""
+          - variant: safe
+            disable: "SYSVIPC IPC_NS"
+          - variant: base
+            disable: "PID_NS IPC_NS SYSVIPC USER_NS CGROUP_DEVICE CGROUP_PIDS POSIX_MQUEUE CFS_BANDWIDTH BLK_DEV_THROTTLING NETFILTER_XT_MATCH_ADDRTYPE NETFILTER_XT_MATCH_IPVS BRIDGE_NETFILTER CPUSETS MACVLAN IPVLAN IP6_NF_NAT IP6_NF_TARGET_MASQUERADE"
 
     steps:
       - name: Checkout repository
@@ -20,22 +30,50 @@ jobs:
             /opt/hostedtoolcache/CodeQL /usr/local/share/boost || true
           df -h /
 
-      - name: Build kernel (Docker defconfig, no Telegram, no KSU)
+      - name: Apply variant config (plain-text pstore + per-variant disables)
+        run: |
+          DEF=arch/arm64/configs/proton_defconfig
+          # Plain-text pstore so bootloop logs are readable (all variants, no boot impact)
+          bash scripts/config --file "$DEF" --disable PSTORE_COMPRESS --disable PSTORE_DEFLATE_COMPRESS
+          # Per-variant Docker-config removals (fallback ladder)
+          for s in ${{ matrix.disable }}; do
+            bash scripts/config --file "$DEF" --disable "$s"
+          done
+          echo "=== variant=${{ matrix.variant }} : key defconfig lines ==="
+          grep -nE 'CONFIG_SYSVIPC|CONFIG_IPC_NS|CONFIG_PID_NS|CONFIG_USER_NS|CONFIG_CGROUP_DEVICE|CONFIG_CGROUP_PIDS|CONFIG_CPUSETS|CONFIG_MACVLAN|PSTORE_COMPRESS' "$DEF" || true
+
+      - name: Build kernel
         run: |
           export WP="$(realpath "$PWD/../")"
           bash build/ckbuild.sh -cR
 
+      - name: Verify generated .config (golden rule - check out/.config, not defconfig)
+        run: |
+          echo "=== variant=${{ matrix.variant }} : EXPANDED out/.config (clang-resolved) ==="
+          for c in CONFIG_SYSVIPC CONFIG_IPC_NS CONFIG_PID_NS CONFIG_USER_NS \
+            CONFIG_CGROUP_DEVICE CONFIG_CGROUP_PIDS CONFIG_CPUSETS CONFIG_MACVLAN \
+            CONFIG_OVERLAY_FS CONFIG_VETH CONFIG_BRIDGE CONFIG_NF_NAT CONFIG_NAMESPACES \
+            CONFIG_PSTORE_COMPRESS CONFIG_LTO_CLANG; do
+            echo "  $(grep -E "^$c=|# $c is not set" out/.config || echo "$c absent")"
+          done
+
+      - name: Rename zip with variant
+        run: |
+          Z="$(ls -t build/ProtonPlus-*.zip | head -n1)"
+          cp "$Z" "build/Proton-docker-${{ matrix.variant }}.zip"
+          ls -la build/Proton-docker-${{ matrix.variant }}.zip
+
       - name: Upload kernel zip (AnyKernel3, flashable)
         uses: actions/upload-artifact@v4
         with:
-          name: proton-docker-kernel
-          path: build/ProtonPlus-*.zip
+          name: proton-docker-${{ matrix.variant }}
+          path: build/Proton-docker-${{ matrix.variant }}.zip
           if-no-files-found: error
 
       - name: Upload build log
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: build-log
+          name: log-${{ matrix.variant }}
           path: log.txt
           if-no-files-found: warn
