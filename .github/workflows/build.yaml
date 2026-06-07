@@ -1,47 +1,41 @@
-name: Kernel Build CI
+name: Proton Docker Kernel CI
 
 on:
+  workflow_dispatch:
   push:
     branches:
-      - proton
-  pull_request:
-    branches:
-      - proton
+      - proton-main
 
 jobs:
   build-kernel:
     runs-on: ubuntu-24.04
 
     steps:
-      - name: Checkout main repository
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Clone private repo ProtonKernel/ids
+      - name: Free up disk space
         run: |
-          git clone https://x-access-token:${{ secrets.IDS_TOKEN }}@github.com/ProtonKernel/ids ../ids
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android \
+            /opt/hostedtoolcache/CodeQL /usr/local/share/boost || true
+          df -h /
 
-      - name: Build with -tlcRk
+      - name: Build kernel (Docker defconfig, no Telegram, no KSU)
         run: |
-          export WP="$(realpath $PWD/../)"
-          bash build/ckbuild.sh -tcRk
-          echo "ZIP_PATH_K=$ZIP_PATH" >> $GITHUB_ENV
-          cp "$ZIP_PATH" ../kernel-build-k.zip
+          export WP="$(realpath "$PWD/../")"
+          bash build/ckbuild.sh -cR
 
-      - name: Upload build with -k
+      - name: Upload kernel zip (AnyKernel3, flashable)
         uses: actions/upload-artifact@v4
         with:
-          name: kernel-build-k
-          path: ../kernel-build-k.zip
+          name: proton-docker-kernel
+          path: build/ProtonPlus-*.zip
+          if-no-files-found: error
 
-      - name: Build with -tlcR
-        run: |
-          export WP="$(realpath $PWD/../)"
-          bash build/ckbuild.sh -tcR
-          echo "ZIP_PATH_NOK=$ZIP_PATH" >> $GITHUB_ENV
-          cp "$ZIP_PATH" ../kernel-build-nok.zip
-
-      - name: Upload build sin -k
+      - name: Upload build log
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: kernel-build-nok
-          path: ../kernel-build-nok.zip
+          name: build-log
+          path: log.txt
+          if-no-files-found: warn
