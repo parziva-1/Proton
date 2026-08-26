@@ -99,7 +99,10 @@ int gpex_qos_set(gpex_qos_flag flags, int val)
 		return -ENOENT;
 	}
 
-	if (task_controls_frequencies(current) && (flags & PMQOS_MAX))
+	freq_control_watch_log(current, "gpex_qos",
+			       (flags & PMQOS_MAX) ? "PMQOS_MAX" : "PMQOS_MIN",
+			       val);
+	if ((flags & PMQOS_MAX) && task_controls_frequencies(current))
 		return 0;
 
 	gpexbe_qos_request_update((mali_pmqos_flags)flags, val);

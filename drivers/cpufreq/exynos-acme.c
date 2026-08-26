@@ -528,6 +528,7 @@ static ssize_t store_freq_qos_min(struct device *dev,
 	if (cpu < 0 || cpu >= NR_CPUS || freq < 0)
 		return -EINVAL;
 
+	freq_control_watch_log(current, "acme", "freq_qos_min", freq);
 	domain = find_domain(cpu);
 	if (!domain)
 		return -EINVAL;
@@ -563,6 +564,7 @@ static ssize_t store_freq_qos_max(struct device *dev,
 	if (cpu < 0 || cpu >= NR_CPUS || freq < 0)
 		return -EINVAL;
 
+	freq_control_watch_log(current, "acme", "freq_qos_max", freq);
 	if (task_controls_frequencies(current))
 		return count;
 
@@ -650,7 +652,12 @@ static ssize_t cpufreq_fops_write(struct file *filp, const char __user *buf,
 			return ret;
 	}
 
-	if (task_controls_frequencies(current) && fops->req_type == FREQ_QOS_MAX)
+	freq_control_watch_log(current, "acme_fops",
+			       fops->req_type == FREQ_QOS_MAX ?
+			       "FREQ_QOS_MAX" : "FREQ_QOS_MIN",
+			       value);
+	if (fops->req_type == FREQ_QOS_MAX &&
+	    task_controls_frequencies(current))
 		return count;
 
 	freq_qos_update_request(req, value);

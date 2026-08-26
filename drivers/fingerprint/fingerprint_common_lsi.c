@@ -1,5 +1,4 @@
 #include "fingerprint_common.h"
-
 #if defined(CONFIG_SENSORS_FINGERPRINT_MODULE)
 #if IS_ENABLED(CONFIG_EXYNOS_PM_QOS) || IS_ENABLED(CONFIG_EXYNOS_PM_QOS_MODULE)
 #include <soc/samsung/exynos_pm_qos.h>

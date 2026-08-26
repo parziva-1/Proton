@@ -25,6 +25,7 @@
 #include <linux/module.h>
 #include <linux/mutex.h>
 #include <linux/pm_qos.h>
+#include <linux/sched.h>
 #include <linux/slab.h>
 #include <linux/suspend.h>
 #include <linux/syscore_ops.h>
@@ -63,6 +64,20 @@ static DEFINE_RWLOCK(cpufreq_driver_lock);
 
 /* Flag to suspend/resume CPUFreq governors */
 static bool cpufreq_suspended;
+
+static const char *cpufreq_relation_name(unsigned int relation)
+{
+	switch (relation) {
+	case CPUFREQ_RELATION_L:
+		return "L";
+	case CPUFREQ_RELATION_H:
+		return "H";
+	case CPUFREQ_RELATION_C:
+		return "C";
+	default:
+		return "?";
+	}
+}
 
 static inline bool has_target(void)
 {
@@ -731,6 +746,7 @@ static ssize_t store_scaling_min_freq(struct cpufreq_policy *policy,
 	if (ret != 1)
 		return -EINVAL;
 
+	freq_control_watch_log(current, "cpufreq", "scaling_min_freq", val);
 	ret = freq_qos_update_request(policy->min_freq_req, val);
 	return ret >= 0 ? count : ret;
 }
@@ -745,6 +761,7 @@ static ssize_t store_scaling_max_freq(struct cpufreq_policy *policy,
 	if (ret != 1)
 		return -EINVAL;
 
+	freq_control_watch_log(current, "cpufreq", "scaling_max_freq", val);
 	if (task_controls_frequencies(current))
 		return count;
 
@@ -2087,6 +2104,8 @@ EXPORT_SYMBOL(cpufreq_unregister_notifier);
 unsigned int cpufreq_driver_fast_switch(struct cpufreq_policy *policy,
 					unsigned int target_freq)
 {
+	unsigned int old_cur = policy->cur;
+	unsigned int requested_freq = target_freq;
 	int ret;
 
 	target_freq = clamp_val(target_freq, policy->min, policy->max);
@@ -2094,6 +2113,11 @@ unsigned int cpufreq_driver_fast_switch(struct cpufreq_policy *policy,
 	ret = cpufreq_driver->fast_switch(policy, target_freq);
 	if (ret)
 		cpufreq_times_record_transition(policy, ret);
+
+	pr_info("cpufreq-fast-target: policy%u cpus=%*pbl cur=%u min=%u max=%u req=%u clamp=%u new=%d by %s[%d] caller=%pS\n",
+		policy->cpu, cpumask_pr_args(policy->related_cpus),
+		old_cur, policy->min, policy->max, requested_freq, target_freq,
+		ret, current->comm, task_pid_nr(current), (void *)_RET_IP_);
 
 	return ret;
 }
@@ -2186,7 +2210,9 @@ int __cpufreq_driver_target(struct cpufreq_policy *policy,
 			    unsigned int target_freq,
 			    unsigned int relation)
 {
+	unsigned int old_cur = policy->cur;
 	unsigned int old_target_freq = target_freq;
+	int ret;
 	int index;
 
 	if (cpufreq_disabled())
@@ -2210,15 +2236,23 @@ int __cpufreq_driver_target(struct cpufreq_policy *policy,
 	/* Save last value to restore later on errors */
 	policy->restore_freq = policy->cur;
 
-	if (cpufreq_driver->target)
-		return cpufreq_driver->target(policy, target_freq, relation);
+	if (cpufreq_driver->target) {
+		ret = cpufreq_driver->target(policy, target_freq, relation);
+	} else {
+		if (!cpufreq_driver->target_index)
+			return -EINVAL;
 
-	if (!cpufreq_driver->target_index)
-		return -EINVAL;
+		index = cpufreq_frequency_table_target(policy, target_freq, relation);
+		ret = __target_index(policy, index);
+	}
 
-	index = cpufreq_frequency_table_target(policy, target_freq, relation);
+	pr_info("cpufreq-target: policy%u cpus=%*pbl cur=%u min=%u max=%u req=%u clamp=%u rel=%s ret=%d new=%u by %s[%d] caller=%pS\n",
+		policy->cpu, cpumask_pr_args(policy->related_cpus),
+		old_cur, policy->min, policy->max, old_target_freq, target_freq,
+		cpufreq_relation_name(relation), ret, policy->cur,
+		current->comm, task_pid_nr(current), (void *)_RET_IP_);
 
-	return __target_index(policy, index);
+	return ret;
 }
 EXPORT_SYMBOL_GPL(__cpufreq_driver_target);
 
@@ -2449,6 +2483,8 @@ static int cpufreq_set_policy(struct cpufreq_policy *policy,
 {
 	struct cpufreq_policy_data new_data;
 	struct cpufreq_governor *old_gov;
+	unsigned int old_min = policy->min;
+	unsigned int old_max = policy->max;
 	int ret;
 
 	memcpy(&new_data.cpuinfo, &policy->cpuinfo, sizeof(policy->cpuinfo));
@@ -2479,6 +2515,12 @@ static int cpufreq_set_policy(struct cpufreq_policy *policy,
 
 	pr_debug("new min and max freqs are %u - %u kHz\n",
 		 policy->min, policy->max);
+	if (old_min != policy->min || old_max != policy->max)
+		pr_info("cpufreq-limit: policy%u cpus=%*pbl %u-%u -> %u-%u cur=%u gov=%s by %s[%d] caller=%pS\n",
+			policy->cpu, cpumask_pr_args(policy->related_cpus),
+			old_min, old_max, policy->min, policy->max, policy->cur,
+			policy->governor ? policy->governor->name : "none",
+			current->comm, task_pid_nr(current), (void *)_RET_IP_);
 
 	if (cpufreq_driver->setpolicy) {
 		policy->policy = new_pol;

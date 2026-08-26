@@ -663,6 +663,64 @@ static bool exynos_pm_qos_is_freq_max_class(int exynos_pm_qos_class)
 		return false;
 	}
 }
+
+static const char *exynos_pm_qos_class_name(int exynos_pm_qos_class)
+{
+	if (exynos_pm_qos_class > 0 &&
+	    exynos_pm_qos_class < ARRAY_SIZE(exynos_pm_qos_array) &&
+	    exynos_pm_qos_array[exynos_pm_qos_class])
+		return exynos_pm_qos_array[exynos_pm_qos_class]->name;
+
+	return "unknown";
+}
+
+static const char *exynos_pm_qos_action_name(enum exynos_pm_qos_req_action action)
+{
+	switch (action) {
+	case EXYNOS_PM_QOS_ADD_REQ:
+		return "add";
+	case EXYNOS_PM_QOS_UPDATE_REQ:
+		return "update";
+	case EXYNOS_PM_QOS_REMOVE_REQ:
+		return "remove";
+	default:
+		return "unknown";
+	}
+}
+
+static bool exynos_pm_qos_is_cpu_freq_class(int exynos_pm_qos_class)
+{
+	switch (exynos_pm_qos_class) {
+	case PM_QOS_CLUSTER0_FREQ_MIN:
+	case PM_QOS_CLUSTER0_FREQ_MAX:
+	case PM_QOS_CLUSTER1_FREQ_MIN:
+	case PM_QOS_CLUSTER1_FREQ_MAX:
+	case PM_QOS_CLUSTER2_FREQ_MIN:
+	case PM_QOS_CLUSTER2_FREQ_MAX:
+		return true;
+	default:
+		return false;
+	}
+}
+
+static void exynos_pm_qos_log_request(struct exynos_pm_qos_request *req,
+				      enum exynos_pm_qos_req_action action,
+				      s32 req_before, s32 requested_value,
+				      s32 agg_before, void *caller)
+{
+	s32 agg_after = exynos_pm_qos_request(req->exynos_pm_qos_class);
+
+	if (!exynos_pm_qos_is_cpu_freq_class(req->exynos_pm_qos_class))
+		return;
+
+	pr_info("exynos_pm_qos: %s class=%s(%d) req=%p req=%d->%d agg=%d->%d owner=%s:%u by %s[%d] caller=%pS\n",
+		exynos_pm_qos_action_name(action),
+		exynos_pm_qos_class_name(req->exynos_pm_qos_class),
+		req->exynos_pm_qos_class, req, req_before, requested_value,
+		agg_before, agg_after, req->func ?: "?", req->line,
+		current->comm, task_pid_nr(current), caller);
+}
+
 static ssize_t exynos_pm_qos_power_write(struct file *filp, const char __user *buf,
 		size_t count, loff_t *f_pos);
 static ssize_t exynos_pm_qos_power_read(struct file *filp, char __user *buf,
@@ -968,12 +1026,19 @@ EXPORT_SYMBOL_GPL(exynos_pm_qos_request_active);
 static void __exynos_pm_qos_update_request(struct exynos_pm_qos_request *req,
 			   s32 new_value)
 {
+	s32 req_before = req->node.prio;
+	s32 agg_before = exynos_pm_qos_request(req->exynos_pm_qos_class);
+
 //	trace_pm_qos_update_request(req->exynos_pm_qos_class, new_value);
 
-	if (new_value != req->node.prio)
+	if (new_value != req->node.prio) {
 		exynos_pm_qos_update_target(
 			exynos_pm_qos_array[req->exynos_pm_qos_class]->constraints,
 			&req->node, EXYNOS_PM_QOS_UPDATE_REQ, new_value);
+		exynos_pm_qos_log_request(req, EXYNOS_PM_QOS_UPDATE_REQ,
+					  req_before, new_value, agg_before,
+					  (void *)_RET_IP_);
+	}
 }
 
 /**
@@ -1008,6 +1073,8 @@ void exynos_pm_qos_add_request_trace(char *func, unsigned int line,
 			struct exynos_pm_qos_request *req, int exynos_pm_qos_class,
 			s32 value)
 {
+	s32 agg_before;
+
 	if (!req) /*guard against callers passing in null */
 		return;
 
@@ -1020,8 +1087,12 @@ void exynos_pm_qos_add_request_trace(char *func, unsigned int line,
 	req->line = line;
 	INIT_DELAYED_WORK(&req->work, exynos_pm_qos_work_fn);
 //	trace_pm_qos_add_request(exynos_pm_qos_class, value);
+	agg_before = exynos_pm_qos_request(exynos_pm_qos_class);
 	exynos_pm_qos_update_target(exynos_pm_qos_array[exynos_pm_qos_class]->constraints,
 			     &req->node, EXYNOS_PM_QOS_ADD_REQ, value);
+	exynos_pm_qos_log_request(req, EXYNOS_PM_QOS_ADD_REQ,
+				  EXYNOS_PM_QOS_DEFAULT_VALUE, value,
+				  agg_before, (void *)_RET_IP_);
 }
 EXPORT_SYMBOL_GPL(exynos_pm_qos_add_request_trace);
 
@@ -1062,6 +1133,9 @@ EXPORT_SYMBOL_GPL(exynos_pm_qos_update_request);
 void exynos_pm_qos_update_request_timeout(struct exynos_pm_qos_request *req, s32 new_value,
 				   unsigned long timeout_us)
 {
+	s32 req_before;
+	s32 agg_before;
+
 	if (!req)
 		return;
 	if (WARN(!exynos_pm_qos_request_active(req),
@@ -1072,10 +1146,16 @@ void exynos_pm_qos_update_request_timeout(struct exynos_pm_qos_request *req, s32
 
 //	trace_pm_qos_update_request_timeout(req->exynos_pm_qos_class,
 //					    new_value, timeout_us);
-	if (new_value != req->node.prio)
+	req_before = req->node.prio;
+	agg_before = exynos_pm_qos_request(req->exynos_pm_qos_class);
+	if (new_value != req->node.prio) {
 		exynos_pm_qos_update_target(
 			exynos_pm_qos_array[req->exynos_pm_qos_class]->constraints,
 			&req->node, EXYNOS_PM_QOS_UPDATE_REQ, new_value);
+		exynos_pm_qos_log_request(req, EXYNOS_PM_QOS_UPDATE_REQ,
+					  req_before, new_value, agg_before,
+					  (void *)_RET_IP_);
+	}
 
 	schedule_delayed_work(&req->work, usecs_to_jiffies(timeout_us));
 }
@@ -1091,6 +1171,9 @@ EXPORT_SYMBOL_GPL(exynos_pm_qos_update_request_timeout);
  */
 void exynos_pm_qos_remove_request(struct exynos_pm_qos_request *req)
 {
+	s32 req_before;
+	s32 agg_before;
+
 	if (!req) /*guard against callers passing in null */
 		return;
 		/* silent return to keep pcm code cleaner */
@@ -1103,9 +1186,14 @@ void exynos_pm_qos_remove_request(struct exynos_pm_qos_request *req)
 	cancel_delayed_work_sync(&req->work);
 
 //	trace_pm_qos_remove_request(req->exynos_pm_qos_class, EXYNOS_PM_QOS_DEFAULT_VALUE);
+	req_before = req->node.prio;
+	agg_before = exynos_pm_qos_request(req->exynos_pm_qos_class);
 	exynos_pm_qos_update_target(exynos_pm_qos_array[req->exynos_pm_qos_class]->constraints,
 			     &req->node, EXYNOS_PM_QOS_REMOVE_REQ,
 			     EXYNOS_PM_QOS_DEFAULT_VALUE);
+	exynos_pm_qos_log_request(req, EXYNOS_PM_QOS_REMOVE_REQ,
+				  req_before, EXYNOS_PM_QOS_DEFAULT_VALUE,
+				  agg_before, (void *)_RET_IP_);
 	memset(req, 0, sizeof(*req));
 }
 EXPORT_SYMBOL_GPL(exynos_pm_qos_remove_request);
@@ -1246,8 +1334,11 @@ static ssize_t exynos_pm_qos_power_write(struct file *filp, const char __user *b
 	}
 
 	req = filp->private_data;
-	if (task_controls_frequencies(current) &&
-	    exynos_pm_qos_is_freq_max_class(req->exynos_pm_qos_class))
+	freq_control_watch_log(current, "exynos_pm_qos",
+			       exynos_pm_qos_class_name(req->exynos_pm_qos_class),
+			       value);
+	if (exynos_pm_qos_is_freq_max_class(req->exynos_pm_qos_class) &&
+	    task_controls_frequencies(current))
 		return count;
 
 	exynos_pm_qos_update_request(req, value);

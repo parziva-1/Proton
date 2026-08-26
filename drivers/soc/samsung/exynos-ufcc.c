@@ -655,19 +655,25 @@ static const char *ufc_task_control_reason(struct task_struct *tsk)
 static bool ufc_group_controls_frequencies(struct task_struct *tsk)
 {
 	struct task_struct *thread;
+	const char *reason;
 
 	if (!freq_control_blocking_enabled())
 		return false;
 
-	if (ufc_task_control_reason(tsk))
+	reason = ufc_task_control_reason(tsk);
+	if (reason) {
+		freq_control_block_log(tsk, reason);
 		return true;
+	}
 
 	rcu_read_lock();
 	for_each_thread(tsk->group_leader, thread) {
-		if (!ufc_task_control_reason(thread))
+		reason = ufc_task_control_reason(thread);
+		if (!reason)
 			continue;
 
 		rcu_read_unlock();
+		freq_control_block_log(tsk, reason);
 		return true;
 	}
 	rcu_read_unlock();
@@ -1093,6 +1099,7 @@ static ssize_t cpufreq_max_limit_store(struct device *dev,
 	if (!sscanf(buf, "%8d", &input))
 		return -EINVAL;
 
+	freq_control_watch_log(current, "ufcc", "cpufreq_max_limit", input);
 	if (ufc_group_controls_frequencies(current)) {
 		ufc_clear_max_limit_state();
 		return count;
@@ -1120,6 +1127,7 @@ static ssize_t cpufreq_min_limit_store(struct device *dev,
 	if (!sscanf(buf, "%8d", &input))
 		return -EINVAL;
 
+	freq_control_watch_log(current, "ufcc", "cpufreq_min_limit", input);
 	ufc_update_request(&user_ufc_req, input);
 
 	return count;
@@ -1140,6 +1148,7 @@ static ssize_t cpufreq_min_limit_wo_boost_store(struct device *dev,
 	if (!sscanf(buf, "%8d", &input))
 		return -EINVAL;
 
+	freq_control_watch_log(current, "ufcc", "cpufreq_min_limit_wo_boost", input);
 	ufc.last_min_wo_boost_input = input;
 	ufc_update_min_limit_wo_boost();
 
@@ -1161,6 +1170,7 @@ static ssize_t cpufreq_max_limit_strict_store(struct device *dev,
 	if (!sscanf(buf, "%8d", &input))
 		return -EINVAL;
 
+	freq_control_watch_log(current, "ufcc", "cpufreq_max_limit_strict", input);
 	if (ufc_group_controls_frequencies(current)) {
 		ufc_clear_max_limit_state();
 		return count;

@@ -31,6 +31,8 @@
 /*#define DEBUG*/
 
 #include <linux/pm_qos.h>
+#include <linux/cpu.h>
+#include <linux/cpufreq.h>
 #include <linux/sched.h>
 #include <linux/spinlock.h>
 #include <linux/slab.h>
@@ -82,6 +84,98 @@ static struct pm_qos_object *pm_qos_array[] = {
 	&null_pm_qos,
 	&cpu_dma_pm_qos,
 };
+
+static const char *pm_qos_class_name(int pm_qos_class)
+{
+	if (pm_qos_class > PM_QOS_RESERVED &&
+	    pm_qos_class < PM_QOS_NUM_CLASSES &&
+	    pm_qos_array[pm_qos_class])
+		return pm_qos_array[pm_qos_class]->name;
+
+	return "unknown";
+}
+
+static const char *pm_qos_action_name(enum pm_qos_req_action action)
+{
+	switch (action) {
+	case PM_QOS_ADD_REQ:
+		return "add";
+	case PM_QOS_UPDATE_REQ:
+		return "update";
+	case PM_QOS_REMOVE_REQ:
+		return "remove";
+	default:
+		return "unknown";
+	}
+}
+
+static void pm_qos_log_request(struct pm_qos_request *req,
+			       enum pm_qos_req_action action,
+			       s32 req_before, s32 requested_value,
+			       s32 agg_before, void *caller)
+{
+	s32 agg_after = pm_qos_request(req->pm_qos_class);
+
+	pr_info("pm_qos: %s class=%s(%d) req=%p req=%d->%d agg=%d->%d by %s[%d] caller=%pS\n",
+		pm_qos_action_name(action),
+		pm_qos_class_name(req->pm_qos_class), req->pm_qos_class, req,
+		req_before, requested_value, agg_before, agg_after,
+		current->comm, task_pid_nr(current), caller);
+}
+
+static const char *freq_qos_type_name(enum freq_qos_req_type type)
+{
+	switch (type) {
+	case FREQ_QOS_MIN:
+		return "min";
+	case FREQ_QOS_MAX:
+		return "max";
+	default:
+		return "unknown";
+	}
+}
+
+#ifdef CONFIG_CPU_FREQ
+static struct cpufreq_policy *freq_qos_policy_from_constraints(struct freq_constraints *qos)
+{
+	struct cpufreq_policy *policy;
+	int cpu;
+
+	for_each_possible_cpu(cpu) {
+		policy = cpufreq_cpu_get_raw(cpu);
+		if (!policy)
+			continue;
+
+		if (&policy->constraints == qos && policy->cpu == cpu)
+			return policy;
+	}
+
+	return NULL;
+}
+#endif
+
+static void freq_qos_log_request(struct freq_constraints *qos,
+				 enum freq_qos_req_type type,
+				 struct freq_qos_request *req,
+				 enum pm_qos_req_action action,
+				 s32 req_before, s32 requested_value,
+				 s32 agg_before, void *caller)
+{
+#ifdef CONFIG_CPU_FREQ
+	struct cpufreq_policy *policy = freq_qos_policy_from_constraints(qos);
+	s32 agg_after;
+
+	if (!policy)
+		return;
+
+	agg_after = freq_qos_read_value(qos, type);
+	pr_info("freq_qos: %s type=%s req=%p policy%u cpus=%*pbl req=%d->%d agg=%d->%d by %s[%d] caller=%pS\n",
+		pm_qos_action_name(action), freq_qos_type_name(type), req,
+		policy->cpu, cpumask_pr_args(policy->related_cpus),
+		req_before, requested_value, agg_before, agg_after,
+		current->comm, task_pid_nr(current), caller);
+#endif
+}
 
 static ssize_t pm_qos_power_write(struct file *filp, const char __user *buf,
 		size_t count, loff_t *f_pos);
@@ -350,12 +444,18 @@ EXPORT_SYMBOL_GPL(pm_qos_request_active);
 static void __pm_qos_update_request(struct pm_qos_request *req,
 			   s32 new_value)
 {
+	s32 req_before = req->node.prio;
+	s32 agg_before = pm_qos_request(req->pm_qos_class);
+
 	trace_pm_qos_update_request(req->pm_qos_class, new_value);
 
-	if (new_value != req->node.prio)
+	if (new_value != req->node.prio) {
 		pm_qos_update_target(
 			pm_qos_array[req->pm_qos_class]->constraints,
 			&req->node, PM_QOS_UPDATE_REQ, new_value);
+		pm_qos_log_request(req, PM_QOS_UPDATE_REQ, req_before, new_value,
+				 agg_before, (void *)_RET_IP_);
+	}
 }
 
 /**
@@ -389,6 +489,8 @@ static void pm_qos_work_fn(struct work_struct *work)
 void pm_qos_add_request(struct pm_qos_request *req,
 			int pm_qos_class, s32 value)
 {
+	s32 agg_before;
+
 	if (!req) /*guard against callers passing in null */
 		return;
 
@@ -399,8 +501,11 @@ void pm_qos_add_request(struct pm_qos_request *req,
 	req->pm_qos_class = pm_qos_class;
 	INIT_DELAYED_WORK(&req->work, pm_qos_work_fn);
 	trace_pm_qos_add_request(pm_qos_class, value);
+	agg_before = pm_qos_request(pm_qos_class);
 	pm_qos_update_target(pm_qos_array[pm_qos_class]->constraints,
 			     &req->node, PM_QOS_ADD_REQ, value);
+	pm_qos_log_request(req, PM_QOS_ADD_REQ, PM_QOS_DEFAULT_VALUE, value,
+			 agg_before, (void *)_RET_IP_);
 }
 EXPORT_SYMBOL_GPL(pm_qos_add_request);
 
@@ -441,6 +546,9 @@ EXPORT_SYMBOL_GPL(pm_qos_update_request);
 void pm_qos_update_request_timeout(struct pm_qos_request *req, s32 new_value,
 				   unsigned long timeout_us)
 {
+	s32 req_before;
+	s32 agg_before;
+
 	if (!req)
 		return;
 	if (WARN(!pm_qos_request_active(req),
@@ -451,10 +559,15 @@ void pm_qos_update_request_timeout(struct pm_qos_request *req, s32 new_value,
 
 	trace_pm_qos_update_request_timeout(req->pm_qos_class,
 					    new_value, timeout_us);
-	if (new_value != req->node.prio)
+	req_before = req->node.prio;
+	agg_before = pm_qos_request(req->pm_qos_class);
+	if (new_value != req->node.prio) {
 		pm_qos_update_target(
 			pm_qos_array[req->pm_qos_class]->constraints,
 			&req->node, PM_QOS_UPDATE_REQ, new_value);
+		pm_qos_log_request(req, PM_QOS_UPDATE_REQ, req_before, new_value,
+				 agg_before, (void *)_RET_IP_);
+	}
 
 	schedule_delayed_work(&req->work, usecs_to_jiffies(timeout_us));
 }
@@ -469,6 +582,9 @@ void pm_qos_update_request_timeout(struct pm_qos_request *req, s32 new_value,
  */
 void pm_qos_remove_request(struct pm_qos_request *req)
 {
+	s32 req_before;
+	s32 agg_before;
+
 	if (!req) /*guard against callers passing in null */
 		return;
 		/* silent return to keep pcm code cleaner */
@@ -481,9 +597,13 @@ void pm_qos_remove_request(struct pm_qos_request *req)
 	cancel_delayed_work_sync(&req->work);
 
 	trace_pm_qos_remove_request(req->pm_qos_class, PM_QOS_DEFAULT_VALUE);
+	req_before = req->node.prio;
+	agg_before = pm_qos_request(req->pm_qos_class);
 	pm_qos_update_target(pm_qos_array[req->pm_qos_class]->constraints,
 			     &req->node, PM_QOS_REMOVE_REQ,
 			     PM_QOS_DEFAULT_VALUE);
+	pm_qos_log_request(req, PM_QOS_REMOVE_REQ, req_before,
+			 PM_QOS_DEFAULT_VALUE, agg_before, (void *)_RET_IP_);
 	memset(req, 0, sizeof(*req));
 }
 EXPORT_SYMBOL_GPL(pm_qos_remove_request);
@@ -759,6 +879,7 @@ int freq_qos_add_request(struct freq_constraints *qos,
 			 struct freq_qos_request *req,
 			 enum freq_qos_req_type type, s32 value)
 {
+	s32 agg_before;
 	int ret;
 
 	if (IS_ERR_OR_NULL(qos) || !req)
@@ -770,10 +891,15 @@ int freq_qos_add_request(struct freq_constraints *qos,
 
 	req->qos = qos;
 	req->type = type;
+	agg_before = freq_qos_read_value(qos, type);
 	ret = freq_qos_apply(req, PM_QOS_ADD_REQ, value);
 	if (ret < 0) {
 		req->qos = NULL;
 		req->type = 0;
+	} else {
+		freq_qos_log_request(qos, type, req, PM_QOS_ADD_REQ,
+				     PM_QOS_DEFAULT_VALUE, value, agg_before,
+				     (void *)_RET_IP_);
 	}
 
 	return ret;
@@ -793,6 +919,10 @@ EXPORT_SYMBOL_GPL(freq_qos_add_request);
  */
 int freq_qos_update_request(struct freq_qos_request *req, s32 new_value)
 {
+	s32 req_before;
+	s32 agg_before;
+	int ret;
+
 	if (!req)
 		return -EINVAL;
 
@@ -803,7 +933,15 @@ int freq_qos_update_request(struct freq_qos_request *req, s32 new_value)
 	if (req->pnode.prio == new_value)
 		return 0;
 
-	return freq_qos_apply(req, PM_QOS_UPDATE_REQ, new_value);
+	req_before = req->pnode.prio;
+	agg_before = freq_qos_read_value(req->qos, req->type);
+	ret = freq_qos_apply(req, PM_QOS_UPDATE_REQ, new_value);
+	if (ret >= 0)
+		freq_qos_log_request(req->qos, req->type, req, PM_QOS_UPDATE_REQ,
+				     req_before, new_value, agg_before,
+				     (void *)_RET_IP_);
+
+	return ret;
 }
 EXPORT_SYMBOL_GPL(freq_qos_update_request);
 
@@ -819,6 +957,10 @@ EXPORT_SYMBOL_GPL(freq_qos_update_request);
  */
 int freq_qos_remove_request(struct freq_qos_request *req)
 {
+	struct freq_constraints *qos;
+	enum freq_qos_req_type type;
+	s32 req_before;
+	s32 agg_before;
 	int ret;
 
 	if (!req)
@@ -828,7 +970,15 @@ int freq_qos_remove_request(struct freq_qos_request *req)
 		 "%s() called for unknown object\n", __func__))
 		return -EINVAL;
 
+	qos = req->qos;
+	type = req->type;
+	req_before = req->pnode.prio;
+	agg_before = freq_qos_read_value(qos, type);
 	ret = freq_qos_apply(req, PM_QOS_REMOVE_REQ, PM_QOS_DEFAULT_VALUE);
+	if (ret >= 0)
+		freq_qos_log_request(qos, type, req, PM_QOS_REMOVE_REQ,
+				     req_before, PM_QOS_DEFAULT_VALUE,
+				     agg_before, (void *)_RET_IP_);
 	req->qos = NULL;
 	req->type = 0;
 
