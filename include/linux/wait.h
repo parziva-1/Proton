@@ -645,6 +645,18 @@ do {										\
 	__ret;									\
 })
 
+#define __wait_event_freezable_state_exclusive(wq, condition, state)			\
+	___wait_event(wq, condition, state, 1, 0, freezable_schedule())
+
+#define wait_event_freezable_state_exclusive(wq, condition, state)			\
+({											\
+	int __ret = 0;									\
+	might_sleep();									\
+	if (!(condition))								\
+		__ret = __wait_event_freezable_state_exclusive(wq, condition, state);	\
+	__ret;										\
+})
+
 /**
  * wait_event_idle - wait for a condition without contributing to system load
  * @wq_head: the waitqueue to wait on
@@ -1177,5 +1189,7 @@ int autoremove_wake_function(struct wait_queue_entry *wq_entry, unsigned mode, i
 		INIT_LIST_HEAD(&(wait)->entry);					\
 		(wait)->flags = 0;						\
 	} while (0)
+
+bool try_invoke_on_locked_down_task(struct task_struct *p, bool (*func)(struct task_struct *t, void *arg), void *arg);
 
 #endif /* _LINUX_WAIT_H */

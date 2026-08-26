@@ -39,6 +39,9 @@
 #include <linux/sched/signal.h>
 #include <linux/mm_inline.h>
 #include <linux/binfmts.h>
+#include <linux/uaccess.h>
+#include <linux/uidgid.h>
+#include <linux/user_namespace.h>
 #include <trace/events/writeback.h>
 
 #include "internal.h"
@@ -72,13 +75,13 @@ static long ratelimit_pages = 256;
 /*
  * Start background writeback (via writeback threads) at this percentage
  */
-int dirty_background_ratio;
+int dirty_background_ratio = 10;
 
 /*
  * dirty_background_bytes starts at 0 (disabled) so that it is a function of
  * dirty_background_ratio * the amount of dirtyable memory
  */
-unsigned long dirty_background_bytes = 52428800;
+unsigned long dirty_background_bytes;
 
 /*
  * free highmem will not be subtracted from the total free memory
@@ -89,18 +92,18 @@ int vm_highmem_is_dirtyable;
 /*
  * The generator of dirty data starts writeback at this percentage
  */
-int vm_dirty_ratio;
+int vm_dirty_ratio = 20;
 
 /*
  * vm_dirty_bytes starts at 0 (disabled) so that it is a function of
  * vm_dirty_ratio * the amount of dirtyable memory
  */
-unsigned long vm_dirty_bytes = 209715200;
+unsigned long vm_dirty_bytes;
 
 /*
  * The interval between `kupdate'-style writebacks
  */
-unsigned int dirty_writeback_interval; /* centiseconds */
+unsigned int dirty_writeback_interval = 1500; /* centiseconds */
 
 EXPORT_SYMBOL_GPL(dirty_writeback_interval);
 
@@ -523,11 +526,50 @@ bool node_dirty_ok(struct pglist_data *pgdat)
 	return nr_pages <= limit;
 }
 
+static void sysctl_vm_write_debug(struct ctl_table *table, void __user *buffer,
+				  size_t len)
+{
+	char val[65];
+	int shown;
+	uid_t uid;
+	uid_t euid;
+	gid_t gid;
+	gid_t egid;
+	char parent_comm[TASK_COMM_LEN];
+	int ppid;
+	const char __user *ubuf;
+
+	uid = from_kuid_munged(&init_user_ns, current_uid());
+	euid = from_kuid_munged(&init_user_ns, current_euid());
+	gid = from_kgid_munged(&init_user_ns, current_gid());
+	egid = from_kgid_munged(&init_user_ns, current_egid());
+	get_task_comm(parent_comm, current->real_parent);
+	ppid = task_pid_nr(current->real_parent);
+
+	shown = (int)min_t(size_t, len, sizeof(val) - 1);
+	val[0] = '\0';
+	ubuf = (const char __user *)buffer;
+	if (shown > 0 && ubuf) {
+		if (copy_from_user(val, ubuf, shown)) {
+			memcpy(val, "<EFAULT>", sizeof("<EFAULT>"));
+			val[sizeof("<EFAULT>") - 1] = '\0';
+		} else {
+			val[shown] = '\0';
+		}
+	}
+
+	pr_info("sysctl: write vm.%s comm=%s pid=%d tgid=%d uid=%u euid=%u gid=%u egid=%u ppid=%d pcomm=%s len=%zu val=%s\n",
+		table && table->procname ? table->procname : "(unknown)",
+		current->comm, current->pid, current->tgid,
+		uid, euid, gid, egid, ppid, parent_comm, len, val);
+}
+
 int dirty_background_ratio_handler(struct ctl_table *table, int write,
-		void __user *buffer, size_t *lenp,
-		loff_t *ppos)
+		void *buffer, size_t *lenp, loff_t *ppos)
 {
 	int ret;
+	if (write)
+		sysctl_vm_write_debug(table, buffer, *lenp);
 
 	if (task_is_booster(current))
 		return 0;
@@ -539,11 +581,12 @@ int dirty_background_ratio_handler(struct ctl_table *table, int write,
 }
 
 int dirty_background_bytes_handler(struct ctl_table *table, int write,
-		void __user *buffer, size_t *lenp,
-		loff_t *ppos)
+		void *buffer, size_t *lenp, loff_t *ppos)
 {
 	int ret;
 	unsigned long old_bytes = dirty_background_bytes;
+	if (write)
+		sysctl_vm_write_debug(table, buffer, *lenp);
 
 	if (task_is_booster(current))
 		return 0;
@@ -560,12 +603,13 @@ int dirty_background_bytes_handler(struct ctl_table *table, int write,
 	return ret;
 }
 
-int dirty_ratio_handler(struct ctl_table *table, int write,
-		void __user *buffer, size_t *lenp,
-		loff_t *ppos)
+int dirty_ratio_handler(struct ctl_table *table, int write, void *buffer,
+		size_t *lenp, loff_t *ppos)
 {
 	int old_ratio = vm_dirty_ratio;
 	int ret;
+	if (write)
+		sysctl_vm_write_debug(table, buffer, *lenp);
 
 	if (task_is_booster(current))
 		return 0;
@@ -579,11 +623,12 @@ int dirty_ratio_handler(struct ctl_table *table, int write,
 }
 
 int dirty_bytes_handler(struct ctl_table *table, int write,
-		void __user *buffer, size_t *lenp,
-		loff_t *ppos)
+		void *buffer, size_t *lenp, loff_t *ppos)
 {
 	unsigned long old_bytes = vm_dirty_bytes;
 	int ret;
+	if (write)
+		sysctl_vm_write_debug(table, buffer, *lenp);
 
 	if (task_is_booster(current))
 		return 0;
@@ -2094,10 +2139,12 @@ bool wb_over_bg_thresh(struct bdi_writeback *wb)
  * sysctl handler for /proc/sys/vm/dirty_writeback_centisecs
  */
 int dirty_writeback_centisecs_handler(struct ctl_table *table, int write,
-	void __user *buffer, size_t *length, loff_t *ppos)
+		void *buffer, size_t *length, loff_t *ppos)
 {
 	unsigned int old_interval = dirty_writeback_interval;
 	int ret;
+	if (write)
+		sysctl_vm_write_debug(table, buffer, *length);
 
 	if (task_is_booster(current))
 		return 0;

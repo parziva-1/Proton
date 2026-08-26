@@ -66,6 +66,7 @@ struct gendisk *get_internal_gendisk(void)
 	dev_t dev;
 	struct gendisk *gd;
 	struct block_device *bdev;
+	fmode_t mode = FMODE_READ;
 
 	if (internal_disk)
 		return internal_disk;
@@ -74,20 +75,28 @@ struct gendisk *get_internal_gendisk(void)
 	dev = blk_lookup_devt("sda", 0);
 	if (!dev)
 		dev = blk_lookup_devt("mmcblk0", 0);
+	if (!dev) {
+		pr_err("%s: Internal disk dev_t not found.\n", __func__);
+		return NULL;
+	}
 
-	bdev = blkdev_get_by_dev(dev, FMODE_WRITE|FMODE_READ, NULL);
+	bdev = blkdev_get_by_dev(dev, mode, NULL);
 	if (IS_ERR(bdev)) {
 		pr_err("%s: No device detected.\n", __func__);
-		return 0;
+		return NULL;
 	}
 
 	gd = bdev->bd_disk;
-	if (IS_ERR(internal_disk)) {
+	if (IS_ERR_OR_NULL(gd)) {
 		pr_err("%s: For an unknown reason, gendisk lost.\n", __func__);
-		return 0;
+		blkdev_put(bdev, mode);
+		return NULL;
 	}
-	
-	return gd;
+
+	internal_disk = gd;
+	blkdev_put(bdev, mode);
+
+	return internal_disk;
 }
 
 #define UNSIGNED_DIFF(n, o) (((n) >= (o)) ? ((n) - (o)) : ((n) + (0 - (o))))
@@ -104,7 +113,7 @@ static ssize_t diskios_show(struct kobject *kobj, struct kobj_attribute *attr, c
 
 	if (!internal_disk) {
 		pr_err("%s: Internal gendisk ptr error.\n", __func__);
-		return -1;
+		return -ENODEV;
 	}
 
 	hd = &internal_disk->part0;
@@ -395,12 +404,17 @@ static int __init blk_sec_stats_init(void)
 		return -ENOMEM;
 
 	pio_cache = kmem_cache_create("pio_node", sizeof(struct pio_node), 0, 0, NULL);
-	if (!pio_cache)
+	if (!pio_cache) {
+		kobject_put(blk_sec_stats_kobj);
 		return -ENOMEM;
+	}
 
 	retval = sysfs_create_group(blk_sec_stats_kobj, &blk_sec_stats_group);
-	if (retval)
+	if (retval) {
+		kmem_cache_destroy(pio_cache);
 		kobject_put(blk_sec_stats_kobj);
+		return retval;
+	}
 
 	return 0;
 }

@@ -68,7 +68,7 @@
 
 struct netlbl_lsm_secattr;
 
-extern int selinux_enabled;
+extern int selinux_enabled_boot;
 
 /* Policy capabilities */
 enum {
@@ -98,7 +98,9 @@ struct selinux_avc;
 struct selinux_ss;
 
 struct selinux_state {
+#ifdef CONFIG_SECURITY_SELINUX_DISABLE
 	bool disabled;
+#endif
 #ifdef CONFIG_SECURITY_SELINUX_DEVELOP
 	bool enforcing;
 #endif
@@ -110,32 +112,67 @@ struct selinux_state {
 
 	struct selinux_avc *avc;
 	struct selinux_ss *ss;
-};
+} __randomize_layout;
 
 void selinux_ss_init(struct selinux_ss **ss);
 void selinux_avc_init(struct selinux_avc **avc);
 
 extern struct selinux_state selinux_state;
 
-#ifdef CONFIG_SECURITY_SELINUX_DEVELOP
-extern int selinux_enforcing;
+static inline bool selinux_initialized(const struct selinux_state *state)
+{
+	/* do a synchronized load to avoid race conditions */
+	return smp_load_acquire(&state->initialized);
+}
+
+static inline void selinux_mark_initialized(struct selinux_state *state)
+{
+	/* do a synchronized write to avoid race conditions */
+	smp_store_release(&state->initialized, true);
+}
+
 static inline bool enforcing_enabled(struct selinux_state *state)
 {
-	return selinux_enforcing; // SEC_SELINUX_PORTING_COMMON Change to use RKP 
+#ifdef CONFIG_SECURITY_SELINUX_DEVELOP
+#if defined(CONFIG_SECURITY_SELINUX_ALWAYS_ENFORCE)
+	return true;
+#elif defined(CONFIG_SECURITY_SELINUX_ALWAYS_PERMISSIVE)
+	return false;
+#else
+	return READ_ONCE(state->enforcing);
+#endif
+#else
+	return true;
+#endif
 }
 
 static inline void enforcing_set(struct selinux_state *state, bool value)
 {
-	selinux_enforcing = value; // SEC_SELINUX_PORTING_COMMON Change to use RKP
+#ifdef CONFIG_SECURITY_SELINUX_DEVELOP
+#if defined(CONFIG_SECURITY_SELINUX_ALWAYS_ENFORCE)
+	WRITE_ONCE(state->enforcing, true);
+#elif defined(CONFIG_SECURITY_SELINUX_ALWAYS_PERMISSIVE)
+	WRITE_ONCE(state->enforcing, false);
+#else
+	WRITE_ONCE(state->enforcing, value);
+#endif
+#endif
+}
+
+#ifdef CONFIG_SECURITY_SELINUX_DISABLE
+static inline bool selinux_disabled(struct selinux_state *state)
+{
+	return READ_ONCE(state->disabled);
+}
+
+static inline void selinux_mark_disabled(struct selinux_state *state)
+{
+	WRITE_ONCE(state->disabled, true);
 }
 #else
-static inline bool enforcing_enabled(struct selinux_state *state)
+static inline bool selinux_disabled(struct selinux_state *state)
 {
-	return true;
-}
-
-static inline void enforcing_set(struct selinux_state *state, bool value)
-{
+	return false;
 }
 #endif
 
@@ -239,7 +276,7 @@ struct extended_perms {
 
 /* definitions of av_decision.flags */
 // [ SEC_SELINUX_PORTING_COMMON
-#ifdef CONFIG_ALWAYS_ENFORCE
+#ifdef CONFIG_SECURITY_SELINUX_ALWAYS_ENFORCE
 #define AVD_FLAGS_PERMISSIVE	0x0000
 #else
 #define AVD_FLAGS_PERMISSIVE	0x0001

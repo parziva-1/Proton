@@ -394,8 +394,9 @@ static void esgov_iowait_boost(struct esgov_cpu *esg_cpu, u64 time,
 		return;
 	}
 
-	/* First wakeup after IO: start with minimum boost */
-	esg_cpu->iowait_boost = esg_cpu->min;
+	/* First wakeup after IO: start from a useful burst-processing floor */
+	esg_cpu->iowait_boost =
+		max_t(unsigned long, esg_cpu->min, SCHED_CAPACITY_SCALE >> 1);
 }
 
 /**
@@ -654,7 +655,7 @@ static void esgov_irq_work(struct irq_work *irq_work)
 static int esgov_kthread_create(struct esgov_policy *esg_policy)
 {
 	struct task_struct *thread;
-	struct sched_param param = { .sched_priority = MAX_USER_RT_PRIO - 1 };
+	struct sched_param param = { .sched_priority = MAX_USER_RT_PRIO / 2 };
 	struct cpufreq_policy *policy = esg_policy->policy;
 	struct device_node *dn;
 	int ret;
@@ -742,7 +743,7 @@ complete_esg_init:
 	esg_policy->uclamp_min = 0;
 	esg_policy->uclamp_max = SCHED_CAPACITY_SCALE;
 	esg_policy->uclamp_monitor_len = 1;	/* Default 1 window == 4ms */
-	esg_policy->uclamp_busy_ratio = 80;	/* Default 80% */
+	esg_policy->uclamp_busy_ratio = 60;	/* Default 60% */
 	up_write(&esg_policy->rwsem);
 
 	return 0;
@@ -1045,12 +1046,10 @@ static bool esgov_postpone_freq_update(struct esgov_policy *esg_policy,
 
 	/* In this point target_freq is different with cur freq */
 	if (esg_policy->policy->cur < target_freq) {
-		u64 ramp_up_bound = esg_policy->up_rate_limit_ns;
-
 		if (rapid_scale == RAPID_SCALE_UP)
 			return false;
 
-		if (elapsed < ramp_up_bound)
+		if (elapsed < (1 * NSEC_PER_MSEC))
 			return true;
 	} else {
 		u64 ramp_down_bound = esg_policy->down_rate_limit_ns;

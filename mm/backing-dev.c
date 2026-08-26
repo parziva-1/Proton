@@ -9,6 +9,9 @@
 #include <linux/pagemap.h>
 #include <linux/mm.h>
 #include <linux/sched.h>
+#include <linux/binfmts.h>
+#include <linux/uidgid.h>
+#include <linux/user_namespace.h>
 #include <linux/module.h>
 #include <linux/writeback.h>
 #include <linux/device.h>
@@ -22,6 +25,24 @@ EXPORT_SYMBOL_GPL(noop_backing_dev_info);
 
 static struct class *bdi_class;
 static const char *bdi_unknown_name = "(unknown)";
+
+#define BDI_READ_AHEAD_FLOOR_KB 512
+
+static bool bdi_readahead_floor_locked(struct backing_dev_info *bdi,
+				       unsigned long read_ahead_kb)
+{
+	const char *owner_name;
+
+	if (!bdi || !bdi->owner)
+		return false;
+
+	owner_name = dev_name(bdi->owner);
+	if (!owner_name)
+		return false;
+
+	return !strcmp(owner_name, "sda") &&
+	       read_ahead_kb < BDI_READ_AHEAD_FLOOR_KB;
+}
 
 /*
  * bdi_lock protects bdi_tree and updates to bdi_list. bdi_list has RCU
@@ -139,10 +160,42 @@ static ssize_t read_ahead_kb_store(struct device *dev,
 	struct backing_dev_info *bdi = dev_get_drvdata(dev);
 	unsigned long read_ahead_kb;
 	ssize_t ret;
+	uid_t uid;
+	char parent_comm[TASK_COMM_LEN];
+	uid_t euid;
+	gid_t gid;
+	gid_t egid;
+	int ppid;
+	int shown;
+	const char *dname;
+
+	uid = from_kuid_munged(&init_user_ns, current_uid());
+	euid = from_kuid_munged(&init_user_ns, current_euid());
+	gid = from_kgid_munged(&init_user_ns, current_gid());
+	egid = from_kgid_munged(&init_user_ns, current_egid());
+	get_task_comm(parent_comm, current->real_parent);
+	ppid = task_pid_nr(current->real_parent);
+
+	shown = (int)min_t(size_t, count, 64);
+	dname = dev_name(dev);
+	if (!dname)
+		dname = "(unknown)";
+
+	pr_info("bdi: write read_ahead_kb dev=%s bdi=%s comm=%s pid=%d tgid=%d uid=%u euid=%u gid=%u egid=%u ppid=%d pcomm=%s val=%.*s\n",
+		dname, bdi ? bdi->name : "(null)", current->comm, current->pid,
+		current->tgid, uid, euid, gid, egid, ppid, parent_comm, shown, buf);
+
+	uid = from_kuid_munged(&init_user_ns, current_uid());
+
+	if (!task_is_booster(current) && uid != 0)
+		return count;
 
 	ret = kstrtoul(buf, 10, &read_ahead_kb);
 	if (ret < 0)
 		return ret;
+
+	if (bdi_readahead_floor_locked(bdi, read_ahead_kb))
+		return count;
 
 	bdi->ra_pages = read_ahead_kb >> (PAGE_SHIFT - 10);
 

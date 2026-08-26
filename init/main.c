@@ -189,6 +189,25 @@ static int __init set_reset_devices(char *str)
 
 __setup("reset_devices", set_reset_devices);
 
+static int uname_bpf_spoof = 0;
+
+static int __init set_uname_bpf_spoof(char *val)
+{
+	int tmp = uname_bpf_spoof;
+
+	if (get_option(&val, &tmp)) {
+		uname_bpf_spoof = tmp;
+	}
+
+	return 0;
+}
+__setup("uname_bpf_spoof=", set_uname_bpf_spoof);
+
+int is_bpf_spoof_enabled(void)
+{
+	return uname_bpf_spoof;
+}
+
 static const char *argv_init[MAX_INIT_ARGS+2] = { "init", NULL, };
 const char *envp_init[MAX_INIT_ENVS+2] = { "HOME=/", "TERM=linux", NULL, };
 static const char *panic_later, *panic_param;
@@ -647,9 +666,7 @@ asmlinkage __visible void __init start_kernel(void)
 	build_all_zonelists(NULL);
 	page_alloc_init();
 
-#if !defined(CONFIG_SAMSUNG_PRODUCT_SHIP)
 	pr_notice("Kernel command line: %s\n", boot_command_line);
-#endif
 	/* parameters may set static keys */
 	jump_label_init();
 	parse_early_param();
@@ -660,6 +677,8 @@ asmlinkage __visible void __init start_kernel(void)
 	if (!IS_ERR_OR_NULL(after_dashes))
 		parse_args("Setting init args", after_dashes, NULL, 0, -1, -1,
 			   NULL, set_init_arg);
+
+	pr_info("Workaround: uname_bpf_spoof=%d\n", uname_bpf_spoof);
 
 	/*
 	 * These use large bootmem allocations and must precede

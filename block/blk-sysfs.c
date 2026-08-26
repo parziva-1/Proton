@@ -7,10 +7,13 @@
 #include <linux/module.h>
 #include <linux/bio.h>
 #include <linux/blkdev.h>
+#include <linux/binfmts.h>
 #include <linux/backing-dev.h>
 #include <linux/blktrace_api.h>
 #include <linux/blk-mq.h>
 #include <linux/blk-cgroup.h>
+#include <linux/uidgid.h>
+#include <linux/user_namespace.h>
 
 #include "blk.h"
 #include "blk-mq.h"
@@ -22,6 +25,52 @@ struct queue_sysfs_entry {
 	ssize_t (*show)(struct request_queue *, char *);
 	ssize_t (*store)(struct request_queue *, const char *, size_t);
 };
+
+#define BLK_READ_AHEAD_FLOOR_KB 512
+
+static bool blk_readahead_floor_locked(struct request_queue *q,
+				       unsigned long ra_kb)
+{
+	const char *owner_name;
+
+	if (!q || !q->backing_dev_info || !q->backing_dev_info->owner)
+		return false;
+
+	owner_name = dev_name(q->backing_dev_info->owner);
+	if (!owner_name)
+		return false;
+
+	return !strcmp(owner_name, "sda") && ra_kb < BLK_READ_AHEAD_FLOOR_KB;
+}
+
+static void blk_sysfs_write_debug(struct request_queue *q, const char *node,
+					 const char *buf, size_t count)
+{
+	char parent_comm[TASK_COMM_LEN];
+	uid_t uid;
+	uid_t euid;
+	gid_t gid;
+	gid_t egid;
+	int ppid;
+	int shown;
+	const char *qname;
+
+	uid = from_kuid_munged(&init_user_ns, current_uid());
+	euid = from_kuid_munged(&init_user_ns, current_euid());
+	gid = from_kgid_munged(&init_user_ns, current_gid());
+	egid = from_kgid_munged(&init_user_ns, current_egid());
+	get_task_comm(parent_comm, current->real_parent);
+	ppid = task_pid_nr(current->real_parent);
+
+	shown = (int)min_t(size_t, count, 64);
+	qname = kobject_name(&q->kobj);
+	if (!qname)
+		qname = "(unknown)";
+
+	pr_info("blk: write %s queue=%s comm=%s pid=%d tgid=%d uid=%u euid=%u gid=%u egid=%u ppid=%d pcomm=%s val=%.*s\n",
+		node, qname, current->comm, current->pid, current->tgid,
+		uid, euid, gid, egid, ppid, parent_comm, shown, buf);
+}
 
 static ssize_t
 queue_var_show(unsigned long var, char *page)
@@ -68,6 +117,8 @@ queue_requests_store(struct request_queue *q, const char *page, size_t count)
 	unsigned long nr;
 	int ret, err;
 
+	blk_sysfs_write_debug(q, "nr_requests", page, count);
+
 	if (!queue_is_mq(q))
 		return -EINVAL;
 
@@ -98,8 +149,18 @@ queue_ra_store(struct request_queue *q, const char *page, size_t count)
 {
 	unsigned long ra_kb;
 	ssize_t ret = queue_var_store(&ra_kb, page, count);
+	uid_t uid;
+
+	blk_sysfs_write_debug(q, "read_ahead_kb", page, count);
 
 	if (ret < 0)
+		return ret;
+
+	uid = from_kuid_munged(&init_user_ns, current_uid());
+	if (!task_is_booster(current) && uid != 0)
+		return ret;
+
+	if (blk_readahead_floor_locked(q, ra_kb))
 		return ret;
 
 	q->backing_dev_info->ra_pages = ra_kb >> (PAGE_SHIFT - 10);

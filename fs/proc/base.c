@@ -96,13 +96,13 @@
 #include <linux/sched/debug.h>
 #include <linux/sched/stat.h>
 #include <linux/posix-timers.h>
+#ifdef CONFIG_KSU_SUSFS_SUS_MAP
+#include <linux/susfs_def.h>
+#endif
 #include <linux/task_integrity.h>
 #include <linux/proca.h>
 #include <linux/cpufreq_times.h>
 #include <linux/cn_proc.h>
-#ifdef CONFIG_KSU_SUSFS_SUS_MAP
-#include <linux/susfs_def.h>
-#endif
 #include <trace/events/oom.h>
 #include "internal.h"
 #include "fd.h"

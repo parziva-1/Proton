@@ -32,7 +32,6 @@ sec_debug_mode.ko
 fingerprint.ko
 fp_qbt2000.ko
 fp_gw9558x.ko
-ssg.ko
 blk-sec-stats.ko
 phy-exynos-mipi-dsim.ko
 phy-exynos-mipi.ko

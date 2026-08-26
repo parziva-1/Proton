@@ -1476,9 +1476,9 @@ static int type_read(struct policydb *p, struct hashtab *h, void *fp)
 	return 0;
 bad:
 // [ SEC_SELINUX_PORTING_COMMON
-#ifndef CONFIG_ALWAYS_ENFORCE
+#ifndef CONFIG_SECURITY_SELINUX_ALWAYS_ENFORCE
 	panic("SELinux:Failed to type read");
-#endif /*CONFIG_ALWAYS_ENFORCE*/
+#endif /*CONFIG_SECURITY_SELINUX_ALWAYS_ENFORCE*/
 // ] SEC_SELINUX_PORTING_COMMON
 	type_destroy(key, typdatum, NULL);
 	return rc;
@@ -2548,9 +2548,9 @@ out:
 	return rc;
 bad:
 // [ SEC_SELINUX_PORTING_COMMON
-#ifndef CONFIG_ALWAYS_ENFORCE
+#ifndef CONFIG_SECURITY_SELINUX_ALWAYS_ENFORCE
 	panic("SELinux:Failed to load policy");
-#endif /*CONFIG_ALWAYS_ENFORCE*/
+#endif /*CONFIG_SECURITY_SELINUX_ALWAYS_ENFORCE*/
 // ] SEC_SELINUX_PORTING_COMMON
 	policydb_destroy(p);
 	goto out;
@@ -2673,7 +2673,7 @@ static int role_trans_write(struct policydb *p, void *fp)
 {
 	struct role_trans *r = p->role_tr;
 	struct role_trans *tr;
-	u32 buf[3];
+	__le32 buf[3];
 	size_t nel;
 	int rc;
 
@@ -2705,7 +2705,7 @@ static int role_trans_write(struct policydb *p, void *fp)
 static int role_allow_write(struct role_allow *r, void *fp)
 {
 	struct role_allow *ra;
-	u32 buf[2];
+	__le32 buf[2];
 	size_t nel;
 	int rc;
 

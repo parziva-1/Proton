@@ -3439,9 +3439,9 @@
 		#cooling-cells = <2>;
 		ect-coeff-index = <3>;
 		governor = "interactive";
-		interactive_info = <767000 80 0>;
+		interactive_info = <767000 35 0>;
 		gpu_dvfs_table_size = <10 9>;
-        gpu_dvfs_table = <949000 80 100 5 3172000 858000 0 0 16 858000 78 100 5 3172000 858000 0 0 16 767000 78 93 5 2730000 858000 0 0 16 676000 78 95 3 2535000 858000 0 0 16 585000 78 95 1 2288000 858000 0 0 16 494000 78 95 1 2028000 858000 0 0 16 403000 78 95 1 2028000 858000 0 0 0 312000 78 90 1 1539000 0 0 0 0 221000 78 85 1 1014000 0 0 0 0 130000 0 85 1 676000 0 0 0 0>;
+        gpu_dvfs_table = <949000 80 100 5 3172000 858000 0 0 16 858000 78 95 5 3172000 858000 0 0 16 767000 78 93 5 2730000 858000 0 0 16 676000 78 95 3 2535000 858000 0 0 16 585000 78 95 1 2288000 858000 0 0 16 494000 78 95 1 2028000 858000 0 0 16 403000 78 95 1 2028000 858000 0 0 0 312000 78 90 1 1539000 0 0 0 0 221000 78 85 1 1014000 0 0 0 0 130000 0 85 1 676000 0 0 0 0>;
         gpu_cl_pmqos_table_size = <10 5>;
         gpu_cl_pmqos_table = <949000 2028000 858000 0 0 858000 2028000 858000 0 0 767000 1716000 858000 0 0 676000 1539000 858000 0 0 585000 1352000 858000 0 0 494000 1352000 858000 0 0 403000 1014000 858000 0 0 312000 1014000 0 0 0 221000 676000 0 0 0 130000 546000 0 0 0>;
 		gpu_pmqos_cpu_cluster_num = <3>;
@@ -3457,7 +3457,7 @@
 		gpu_voltage_offset_margin = <37500>;
 		gpu_tmu_control = <1>;
 		gpu_temp_throttling_level_num = <6>;
-		gpu_temp_throttling = <949000 949000 949000 949000 949000 767000>;
+		gpu_temp_throttling = <949000 949000 949000 949000 858000 767000>;
 		gpu_power_coeff = <625>;
 		gpu_dvfs_time_interval = <5>;
 		gpu_default_wakeup_lock = <1>;
@@ -13873,7 +13873,7 @@
 			device_type = "cpu";
 			compatible = "arm,hera", "arm,armv8";
 			reg = <0x00 0x700>;
-			capacity-dmips-mhz = <0x3e5>;
+			capacity-dmips-mhz = <0x400>;
 			dynamic-power-coefficient = <0x240>;
 			enable-method = "psci";
 			cpu-idle-states = <0x108>;
@@ -19343,11 +19343,11 @@
 
 				mode_0 {
 					mode_id = <0x00>;
-					target_load = "60 676000:84 845000:90 1014000:95 1352000:97 2028000:99";
+					target_load = "45 676000:60 845000:70 1014000:80 1352000:85 2028000:90";
 					min_sample_time = <0x32>;
 					hold_sample_time = <0x64>;
-					hispeed_load = <0x62>;
-					hispeed_freq = <0xf78f0>;
+					hispeed_load = <0x46>;
+					hispeed_freq = <0x14a140>;
 				};
 
 				mode_1 {

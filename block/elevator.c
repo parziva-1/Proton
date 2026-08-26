@@ -37,6 +37,7 @@
 #include <linux/uaccess.h>
 #include <linux/pm_runtime.h>
 #include <linux/blk-cgroup.h>
+#include <linux/binfmts.h>
 
 #include <trace/events/block.h>
 
@@ -679,10 +680,23 @@ void elevator_init_mq(struct request_queue *q)
 	if (unlikely(q->elevator))
 		return;
 
-	if (!q->required_elevator_features)
+	if (IS_ENABLED(CONFIG_BFQ_DEFAULT)) {
+		e = elevator_get(q, "bfq", false);
+	} else if (IS_ENABLED(CONFIG_MQ_KYBER_DEFAULT)) {
+		e = elevator_get(q, "kyber", false);
+	} else if (IS_ENABLED(CONFIG_MQ_SSG_DEFAULT)) {
+		e = elevator_get(q, "ssg", false);
+	} else if (IS_ENABLED(CONFIG_MQ_DEADLINE_DEFAULT)) {
+		e = elevator_get(q, "mq-deadline", false);
+	} else if (IS_ENABLED(CONFIG_MQ_ADIOS_DEFAULT)) {
+		e = elevator_get(q, "adios", false);
+	} else if (!q->required_elevator_features) {
+		if (IS_ENABLED(CONFIG_NONE_DEFAULT))
+			return;
 		e = elevator_get_default(q);
-	else
+	} else {
 		e = elevator_get_by_features(q);
+	}
 	if (!e)
 		return;
 
@@ -725,6 +739,8 @@ static int elevator_switch(struct request_queue *q, struct elevator_type *new_e)
 	return err;
 }
 
+bool task_is_booster(struct task_struct *tsk);
+
 /*
  * Switch this queue to the given IO scheduler.
  */
@@ -732,6 +748,9 @@ static int __elevator_change(struct request_queue *q, const char *name)
 {
 	char elevator_name[ELV_NAME_MAX];
 	struct elevator_type *e;
+
+	if (task_is_booster(current))
+		return 0;
 
 	/* Make sure queue is not in the middle of being removed */
 	if (!blk_queue_registered(q))
@@ -764,6 +783,9 @@ ssize_t elv_iosched_store(struct request_queue *q, const char *name,
 			  size_t count)
 {
 	int ret;
+
+	if (task_is_booster(current))
+		return count;
 
 	if (!queue_is_mq(q) || !elv_support_iosched(q))
 		return count;

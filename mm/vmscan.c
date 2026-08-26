@@ -53,6 +53,7 @@
 #include <linux/psi.h>
 #include <linux/sec_detect.h>
 #include <linux/pagewalk.h>
+#include <linux/shmem_fs.h>
 #include <linux/ctype.h>
 #include <linux/debugfs.h>
 
@@ -185,6 +186,23 @@ int vm_swappiness = 100;
  * zones.
  */
 unsigned long vm_total_pages;
+
+#define DEF_KSWAPD_THREADS_PER_NODE 2
+static int kswapd_threads = DEF_KSWAPD_THREADS_PER_NODE;
+static int __init kswapd_per_node_setup(char *str)
+{
+	int tmp;
+
+	if (kstrtoint(str, 0, &tmp) < 0)
+		return 0;
+
+	if (tmp > MAX_KSWAPD_THREADS || tmp <= 0)
+		return 0;
+
+	kswapd_threads = tmp;
+	return 1;
+}
+__setup("kswapd_per_node=", kswapd_per_node_setup);
 
 static void set_task_reclaim_state(struct task_struct *task,
 				   struct reclaim_state *rs)
@@ -1763,15 +1781,6 @@ static __always_inline void update_lru_sizes(struct lruvec *lruvec,
 
 }
 
-/*
- * Helper function for MGLRU on Kernel 5.4
- * Checks if the mapping belongs to shared memory (tmpfs)
- */
-static bool shmem_mapping(struct address_space *mapping)
-{
-    return mapping->host && mapping->host->i_sb->s_magic == TMPFS_MAGIC;
-}
-
 #ifdef CONFIG_CMA
 /*
  * It is waste of effort to scan and reclaim CMA pages if it is not available
@@ -2439,7 +2448,7 @@ static bool am_app_launch = false;
 
 #if CONFIG_KSWAPD_CPU
 static int set_kswapd_cpu_affinity_as_config(void);
-static int set_kswapd_cpu_affinity_as_boost(void);
+// static int set_kswapd_cpu_affinity_as_boost(void);
 #endif
 
 #ifdef CONFIG_SYSFS
@@ -2475,12 +2484,14 @@ static ssize_t mem_boost_mode_store(struct kobject *kobj,
 			wake_ion_rbin_heap_prereclaim();
 	}
 #endif
+#if 0 /* Disabled: mem_boost should not override kswapd affinity */
 #if CONFIG_KSWAPD_CPU
 	if (mem_boost_mode >= BOOST_HIGH)
 		set_kswapd_cpu_affinity_as_boost();
 	else if (mem_boost_mode == NO_BOOST)
 		set_kswapd_cpu_affinity_as_config();
 #endif
+#endif /* 0 */
 	return count;
 }
 
@@ -7120,6 +7131,7 @@ static int set_kswapd_cpu_affinity_as_config(void)
 	return 0;
 }
 
+#if 0
 static int set_kswapd_cpu_affinity_as_boost(void)
 {
 	int nid;
@@ -7136,6 +7148,7 @@ static int set_kswapd_cpu_affinity_as_boost(void)
 	}
 	return 0;
 }
+#endif
 #endif
 
 /*
@@ -7228,6 +7241,46 @@ kswapd_try_sleep:
 	tsk->flags &= ~(PF_MEMALLOC | PF_SWAPWRITE | PF_KSWAPD);
 
 	return 0;
+}
+
+static int kswapd_per_node_run(int nid)
+{
+	pg_data_t *pgdat = NODE_DATA(nid);
+	int hid;
+	int ret = 0;
+
+	for (hid = 0; hid < kswapd_threads; ++hid) {
+		pgdat->mkswapd[hid] = kthread_run(kswapd, pgdat, "kswapd%d:%d",
+								nid, hid);
+		if (IS_ERR(pgdat->mkswapd[hid])) {
+			/* failure at boot is fatal */
+			WARN_ON(system_state < SYSTEM_RUNNING);
+			pr_err("Failed to start kswapd%d on node %d\n",
+				hid, nid);
+			ret = PTR_ERR(pgdat->mkswapd[hid]);
+			pgdat->mkswapd[hid] = NULL;
+			continue;
+		}
+		if (!pgdat->kswapd)
+			pgdat->kswapd = pgdat->mkswapd[hid];
+	}
+
+	return ret;
+}
+
+static void kswapd_per_node_stop(int nid)
+{
+	int hid = 0;
+	struct task_struct *kswapd;
+
+	for (hid = 0; hid < kswapd_threads; hid++) {
+		kswapd = NODE_DATA(nid)->mkswapd[hid];
+		if (kswapd) {
+			kthread_stop(kswapd);
+			NODE_DATA(nid)->mkswapd[hid] = NULL;
+		}
+	}
+	NODE_DATA(nid)->kswapd = NULL;
 }
 
 /*
@@ -7358,6 +7411,9 @@ int kswapd_run(int nid)
 	if (pgdat->kswapd)
 		return 0;
 
+	if (kswapd_threads > 1)
+		return kswapd_per_node_run(nid);
+
 	pgdat->kswapd = kthread_run(kswapd, pgdat, "kswapd%d", nid);
 	if (IS_ERR(pgdat->kswapd)) {
 		/* failure at boot is fatal */
@@ -7376,6 +7432,11 @@ int kswapd_run(int nid)
 void kswapd_stop(int nid)
 {
 	struct task_struct *kswapd = NODE_DATA(nid)->kswapd;
+
+	if (kswapd_threads > 1) {
+		kswapd_per_node_stop(nid);
+		return;
+	}
 
 	if (kswapd) {
 		kthread_stop(kswapd);
